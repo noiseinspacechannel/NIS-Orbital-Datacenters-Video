@@ -1,0 +1,3173 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earth Season and Orbit Visualizer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #171717;
+            --panel: rgba(8, 13, 24, 0.92);
+            --panel-2: rgba(15, 22, 35, 0.92);
+            --line: rgba(103, 143, 184, 0.22);
+            --line-strong: rgba(103, 173, 231, 0.48);
+            --text: #d8e6f5;
+            --muted: #7f95ad;
+            --blue: #49a7ff;
+            --cyan: #45e4ff;
+            --green: #46e8a2;
+            --yellow: #f2d64a;
+            --orange: #ff9f3e;
+            --danger: #ff6c73;
+            --rail-height: 220px;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            letter-spacing: 0;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        #app {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #171717;
+        }
+
+        #view3d {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: var(--rail-height);
+            left: 0;
+            overflow: hidden;
+        }
+
+        #view3d canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        #top-readout {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            z-index: 10;
+            width: min(430px, calc(100vw - 28px));
+            background: rgba(5, 9, 17, 0.78);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            overflow: hidden;
+        }
+
+        .readout-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        h1 {
+            font-size: 14px;
+            line-height: 1.15;
+            color: #f1f6ff;
+            font-weight: 750;
+        }
+
+        .readout-head span {
+            font-size: 9px;
+            color: var(--green);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        #metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1px;
+            background: rgba(103, 143, 184, 0.12);
+        }
+
+        .metric {
+            min-width: 0;
+            background: rgba(8, 13, 24, 0.82);
+            padding: 8px 9px;
+        }
+
+        .metric .label {
+            display: block;
+            margin-bottom: 3px;
+            color: #67819c;
+            font-size: 8px;
+            line-height: 1;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .metric .value {
+            display: block;
+            color: #eaf4ff;
+            font-size: 12px;
+            line-height: 1.2;
+            font-weight: 750;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #season-panel {
+            position: absolute;
+            right: 16px;
+            bottom: calc(var(--rail-height) + 16px);
+            z-index: 11;
+            width: min(34.5vw, calc((100vh - var(--rail-height) - 48px) * 0.759));
+            aspect-ratio: 33 / 25;
+            height: auto;
+            background: rgba(5, 9, 17, 0.78);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            overflow: hidden;
+        }
+
+        .panel-label {
+            position: absolute;
+            top: 8px;
+            left: 10px;
+            z-index: 2;
+            color: #76a5d6;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            pointer-events: none;
+        }
+
+        #season-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #season-canvas:active {
+            cursor: grabbing;
+        }
+
+        #season-info {
+            position: absolute;
+            left: 10px;
+            right: 10px;
+            bottom: 9px;
+            z-index: 2;
+            color: rgba(216, 230, 245, 0.86);
+            font-size: 10px;
+            line-height: 1.35;
+            pointer-events: none;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.78);
+        }
+
+        #energy-panel {
+            position: absolute;
+            left: 16px;
+            top: 92px;
+            z-index: 18;
+            width: min(560px, calc(100vw - 32px));
+            max-height: calc(100vh - var(--rail-height) - 116px);
+            overflow-y: auto;
+            background: rgba(5, 9, 17, 0.84);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            padding: 10px;
+        }
+
+        #energy-panel[hidden] {
+            display: none;
+        }
+
+        .energy-title {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 9px;
+            color: #dbeeff;
+            font-size: 10px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 1.05px;
+        }
+
+        .energy-title strong {
+            margin-right: auto;
+        }
+
+        .energy-title span {
+            margin-left: auto;
+            color: var(--muted);
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: none;
+            letter-spacing: 0;
+            text-align: right;
+        }
+
+        .energy-mini-btn {
+            border: 1px solid rgba(103, 143, 184, 0.28);
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #b7cadc;
+            min-height: 24px;
+            padding: 0 8px;
+            font-size: 10px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .energy-mini-btn.active {
+            border-color: rgba(70, 232, 162, 0.66);
+            background: rgba(70, 232, 162, 0.12);
+            color: var(--green);
+        }
+
+        .energy-row {
+            display: grid;
+            grid-template-columns: 96px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 8px 0;
+            border-top: 1px solid rgba(103, 143, 184, 0.16);
+        }
+
+        .energy-row:first-child {
+            border-top: 0;
+            padding-top: 0;
+        }
+
+        .energy-thumb {
+            width: 96px;
+            height: 60px;
+            border: 1px solid rgba(103, 143, 184, 0.24);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .energy-main {
+            min-width: 0;
+        }
+
+        .energy-name {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            color: #eaf4ff;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .energy-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .energy-values {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 1px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .energy-power {
+            color: var(--yellow);
+        }
+
+        .energy-total {
+            color: #9fd2ff;
+            font-size: 9px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .battery {
+            position: relative;
+            width: 100%;
+            height: 22px;
+            margin: 5px 10px 4px 0;
+            border: 1px solid rgba(216, 230, 245, 0.38);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.04);
+            overflow: visible;
+        }
+
+        .battery::after {
+            content: "";
+            position: absolute;
+            right: -8px;
+            top: 6px;
+            width: 5px;
+            height: 10px;
+            border: 1px solid rgba(216, 230, 245, 0.38);
+            border-left: 0;
+            border-radius: 0 2px 2px 0;
+        }
+
+        .battery-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 3px;
+            background: #ff6c73;
+            box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.14);
+        }
+
+        .energy-note {
+            color: #7f95ad;
+            font-size: 9px;
+            line-height: 1.25;
+        }
+
+        #control-rail {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 20;
+            display: grid;
+            grid-template-columns: minmax(230px, 0.8fr) minmax(360px, 1.25fr) minmax(460px, 1.75fr);
+            gap: 10px;
+            min-height: 198px;
+            padding: 10px 12px 12px;
+            background: linear-gradient(180deg, rgba(3, 5, 9, 0.58), rgba(3, 5, 9, 0.96));
+            border-top: 1px solid var(--line);
+            backdrop-filter: blur(16px);
+            box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.44);
+        }
+
+        .control-section {
+            min-width: 0;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 9px;
+            overflow: hidden;
+        }
+
+        .control-section h2,
+        .sat-card h3 {
+            margin-bottom: 8px;
+            color: #7fb5e9;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 1.15px;
+        }
+
+        .object-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+
+        .toggle-btn,
+        .mode-btn,
+        .play-btn {
+            border: 1px solid rgba(103, 143, 184, 0.28);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.035);
+            color: #b7cadc;
+            min-height: 30px;
+            padding: 0 9px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color 0.16s, background 0.16s, color 0.16s, box-shadow 0.16s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .toggle-btn:hover,
+        .mode-btn:hover,
+        .play-btn:hover {
+            border-color: var(--line-strong);
+            color: #eef8ff;
+        }
+
+        .toggle-btn.active,
+        .mode-btn.active,
+        .play-btn.active {
+            border-color: rgba(70, 232, 162, 0.66);
+            background: rgba(70, 232, 162, 0.12);
+            color: var(--green);
+            box-shadow: 0 0 18px rgba(70, 232, 162, 0.08);
+        }
+
+        .timeline {
+            display: grid;
+            gap: 9px;
+        }
+
+        .timeline-row {
+            display: grid;
+            grid-template-columns: 70px minmax(0, 1fr) 96px;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .timeline-row label,
+        .sat-row label {
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 750;
+            text-transform: uppercase;
+            letter-spacing: 0.55px;
+        }
+
+        .range-wrap {
+            position: relative;
+            min-width: 0;
+            padding: 10px 0 16px;
+        }
+
+        .weather-wrap {
+            padding-bottom: 23px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--blue);
+            cursor: pointer;
+        }
+
+        .weather-marks {
+            position: absolute;
+            left: 7px;
+            right: 7px;
+            bottom: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+            font-size: 14px;
+            line-height: 1;
+            filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.72));
+        }
+
+        .season-marks {
+            position: absolute;
+            left: 7px;
+            right: 7px;
+            bottom: 0;
+            height: 18px;
+            pointer-events: none;
+        }
+
+        .season-mark {
+            position: absolute;
+            bottom: 0;
+            transform: translateX(-50%);
+            color: #7f95ad;
+            font-size: 8px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .season-mark::before {
+            content: "";
+            display: block;
+            width: 1px;
+            height: 7px;
+            margin: 0 auto 2px;
+            background: var(--yellow);
+            opacity: 0.9;
+        }
+
+        .value-pill,
+        .numeric-input,
+        .time-input {
+            height: 28px;
+            min-width: 0;
+            border: 1px solid rgba(103, 143, 184, 0.26);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #edf7ff;
+            padding: 0 8px;
+            font-size: 11px;
+            font-weight: 750;
+            text-align: right;
+        }
+
+        .value-pill {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            color: var(--green);
+        }
+
+        .time-input {
+            width: 100%;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .playback-row {
+            display: grid;
+            grid-template-columns: 66px 66px 92px minmax(0, 1fr) 74px;
+            align-items: center;
+            gap: 8px;
+            padding-top: 2px;
+        }
+
+        .sat-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            height: 100%;
+        }
+
+        .sat-card {
+            min-width: 0;
+            background: var(--panel-2);
+            border: 1px solid rgba(103, 143, 184, 0.20);
+            border-radius: 7px;
+            padding: 8px;
+        }
+
+        .sat-card h3 {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: #d7e8fa;
+            margin-bottom: 9px;
+        }
+
+        .sat-card h3 span {
+            color: var(--yellow);
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .sat-row {
+            display: grid;
+            grid-template-columns: 62px minmax(0, 1fr) 70px;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 8px;
+        }
+
+        .sat-row .numeric-input {
+            width: 100%;
+        }
+
+        .mode-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .mode-btn {
+            min-height: 27px;
+            padding: 0 6px;
+            font-size: 10px;
+        }
+
+        .sat-note {
+            margin-top: 8px;
+            color: #6d849a;
+            font-size: 9px;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #error-log {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 99;
+            display: none;
+            width: min(520px, calc(100vw - 28px));
+            max-height: 40vh;
+            overflow: auto;
+            padding: 10px 12px;
+            background: rgba(24, 6, 8, 0.94);
+            border: 1px solid rgba(255, 108, 115, 0.6);
+            border-radius: 8px;
+            color: #ffd9dc;
+            font: 11px/1.4 Consolas, monospace;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 1160px) {
+            #control-rail {
+                grid-template-columns: 1fr 1.4fr;
+                max-height: 48vh;
+                overflow-y: auto;
+            }
+
+            .sat-controls {
+                grid-column: 1 / -1;
+            }
+
+            #season-panel {
+                bottom: calc(var(--rail-height) + 12px);
+                width: min(52.9vw, calc(100vw - 24px), calc((100vh - var(--rail-height) - 36px) * 0.828));
+                aspect-ratio: 33 / 25;
+                height: auto;
+            }
+        }
+
+        @media (max-width: 760px) {
+            #top-readout {
+                width: calc(100vw - 24px);
+                left: 12px;
+                top: 12px;
+            }
+
+            #metrics {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #season-panel {
+                right: 12px;
+                bottom: calc(var(--rail-height) + 12px);
+                width: min(calc(100vw - 24px), calc((100vh - var(--rail-height) - 120px) * 1.058));
+                aspect-ratio: 33 / 25;
+                height: auto;
+            }
+
+            #control-rail {
+                grid-template-columns: 1fr;
+                max-height: 48vh;
+                overflow-y: auto;
+            }
+
+            .timeline-row,
+            .playback-row,
+            .sat-row {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+
+            .sat-controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div id="view3d"></div>
+
+        <div id="top-readout">
+            <div class="readout-head">
+                <h1>Earth Season and Orbit Visualizer</h1>
+                <span id="play-state">Paused</span>
+            </div>
+            <div id="metrics">
+                <div class="metric"><span class="label">Date</span><span class="value" id="metric-date">--</span></div>
+                <div class="metric"><span class="label">Local Solar</span><span class="value" id="metric-time">--</span></div>
+                <div class="metric"><span class="label">Sun Dec</span><span class="value" id="metric-sun">--</span></div>
+                <div class="metric"><span class="label">Arizona Sun</span><span class="value" id="metric-az">--</span></div>
+            </div>
+        </div>
+
+        <div id="season-panel">
+            <div class="panel-label">Season Orbit 3D (not to scale)</div>
+            <canvas id="season-canvas"></canvas>
+            <div id="season-info"></div>
+        </div>
+
+        <div id="energy-panel" hidden>
+            <div class="energy-title">
+                <strong>Energy Analysis</strong>
+                <button class="energy-mini-btn" id="energy-animate-btn">Animate Day</button>
+                <span id="energy-date-label">current date</span>
+            </div>
+            <div id="energy-rows"></div>
+        </div>
+
+        <div id="control-rail">
+            <section class="control-section">
+                <h2>Objects</h2>
+                <div class="object-grid">
+                    <button class="toggle-btn active" data-object="fixedPanel">Fixed Arizona Panel</button>
+                    <button class="toggle-btn active" data-object="singleAxisFlatPanel">Single-Axis Flat Panel</button>
+                    <button class="toggle-btn active" data-object="singleAxisTiltedPanel">Single-Axis Tilted Panel</button>
+                    <button class="toggle-btn active" data-object="trackingPanel">Two-Axis Tracking Panel</button>
+                    <button class="toggle-btn active" data-object="sunSync">Sun-Sync Dawn-Dusk Satellite</button>
+                    <button class="toggle-btn active" data-object="polar">Polar Satellite</button>
+                    <button class="toggle-btn active" data-object="inclined55">30 deg Satellite</button>
+                    <button class="toggle-btn" data-object="vanAllenBelts">Van Allen Belts</button>
+                    <button class="toggle-btn" id="energy-analysis-btn">Energy Analysis</button>
+                </div>
+            </section>
+
+            <section class="control-section timeline">
+                <h2>Date, Time, Playback</h2>
+                <div class="timeline-row">
+                    <label for="date-slider">Date</label>
+                    <div class="range-wrap">
+                        <input id="date-slider" type="range" min="0" max="364" step="1" value="171">
+                        <div class="season-marks" id="season-marks"></div>
+                    </div>
+                    <div class="value-pill" id="date-label">--</div>
+                </div>
+
+                <div class="timeline-row">
+                    <label for="time-slider">Local Solar</label>
+                    <div class="range-wrap">
+                        <input id="time-slider" type="range" min="0" max="86399" step="1" value="43200">
+                    </div>
+                    <input class="time-input" id="time-input" value="12:00:00" aria-label="Time of day">
+                </div>
+
+                <div class="timeline-row">
+                    <label for="weather-slider">Weather</label>
+                    <div class="range-wrap weather-wrap">
+                        <input id="weather-slider" type="range" min="0" max="100" step="1" value="0">
+                        <div class="weather-marks" aria-hidden="true">
+                            <span title="Sunny">☀️</span>
+                            <span title="Cloudy">☁️</span>
+                            <span title="Stormy">⛈️</span>
+                        </div>
+                    </div>
+                    <input class="numeric-input" id="weather-input" type="number" min="0" max="100" step="1" value="0" aria-label="Weather">
+                </div>
+
+                <div class="playback-row">
+                    <button class="play-btn" id="play-btn">Play</button>
+                    <button class="play-btn active" id="pause-btn">Pause</button>
+                    <label for="rate-slider">Rate</label>
+                    <input id="rate-slider" type="range" min="0.1" max="180" step="0.1" value="30">
+                    <input class="numeric-input" id="rate-input" type="number" min="0.1" max="180" step="0.1" value="30" aria-label="Simulation rate">
+                </div>
+            </section>
+
+            <section class="sat-controls">
+                <div class="sat-card" data-sat-card="sunSync">
+                    <h3>Sun-Sync <span id="sunSync-inc">--</span></h3>
+                    <div class="sat-row">
+                        <label for="sunSync-alt">Altitude</label>
+                        <input id="sunSync-alt" type="range" min="300" max="2000" step="10" value="500">
+                        <input class="numeric-input" id="sunSync-alt-num" type="number" min="300" max="2000" step="10" value="500">
+                    </div>
+                    <div class="mode-row">
+                        <button class="mode-btn active" data-sat="sunSync" data-mode="nadir">Center Face</button>
+                        <button class="mode-btn" data-sat="sunSync" data-mode="sun">Sun-Track</button>
+                    </div>
+                    <div class="sat-note" id="sunSync-note">J2 RAAN holds local dawn-dusk.</div>
+                </div>
+
+                <div class="sat-card" data-sat-card="polar">
+                    <h3>Polar <span>90.0 deg</span></h3>
+                    <div class="sat-row">
+                        <label for="polar-alt">Altitude</label>
+                        <input id="polar-alt" type="range" min="300" max="2000" step="10" value="500">
+                        <input class="numeric-input" id="polar-alt-num" type="number" min="300" max="2000" step="10" value="500">
+                    </div>
+                    <div class="mode-row">
+                        <button class="mode-btn active" data-sat="polar" data-mode="nadir">Center Face</button>
+                        <button class="mode-btn" data-sat="polar" data-mode="sun">Sun-Track</button>
+                    </div>
+                    <div class="sat-note" id="polar-note">Near-zero J2 nodal drift.</div>
+                </div>
+
+                <div class="sat-card" data-sat-card="inclined55">
+                    <h3>30 deg <span>30.0 deg</span></h3>
+                    <div class="sat-row">
+                        <label for="inclined55-alt">Altitude</label>
+                        <input id="inclined55-alt" type="range" min="300" max="2000" step="10" value="500">
+                        <input class="numeric-input" id="inclined55-alt-num" type="number" min="300" max="2000" step="10" value="500">
+                    </div>
+                    <div class="mode-row">
+                        <button class="mode-btn active" data-sat="inclined55" data-mode="nadir">Center Face</button>
+                        <button class="mode-btn" data-sat="inclined55" data-mode="sun">Sun-Track</button>
+                    </div>
+                    <div class="sat-note" id="inclined55-note">J2 regression visible over time.</div>
+                </div>
+            </section>
+        </div>
+
+        <pre id="error-log"></pre>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        (() => {
+            "use strict";
+
+            const DEG = Math.PI / 180;
+            const TWO_PI = Math.PI * 2;
+            const EARTH_RADIUS_KM = 6378.137;
+            const MU = 398600.4418;
+            const J2 = 1.08262668e-3;
+            const SOLAR_DAY = 86400;
+            const SIDEREAL_DAY = 86164.0905;
+            const YEAR_DAYS = 365;
+            const YEAR_SECONDS = YEAR_DAYS * SOLAR_DAY;
+            const SUN_YEAR_RATE = TWO_PI / (365.2422 * SOLAR_DAY);
+            const OBLIQUITY = 23.43928 * DEG;
+            const VERNAL_EQUINOX_DAY = 79;
+            const EARTH_SCENE_RADIUS = 5.0;
+            const KM_TO_SCENE = EARTH_SCENE_RADIUS / EARTH_RADIUS_KM;
+            const SUN_DISTANCE = 240;
+            const SOLAR_INPUT_W_M2 = 1361;
+            const DAILY_FULL_WH_M2 = SOLAR_INPUT_W_M2 * 24;
+            const TRACKER_MAX_ROTATION = 45 * DEG;
+            const ARIZONA = { lat: 34.25, lon: -111.65 };
+            const UP_Z = new THREE.Vector3(0, 0, 1);
+            const NORTH_Y = new THREE.Vector3(0, 1, 0);
+            const X_AXIS = new THREE.Vector3(1, 0, 0);
+            const EQ_TO_ECLIPTIC = new THREE.Quaternion().setFromAxisAngle(X_AXIS, OBLIQUITY);
+            const HEATMAP_COLOR_STOPS = [
+                [0.00, new THREE.Color(0x00104d)],
+                [0.16, new THREE.Color(0x0038ff)],
+                [0.31, new THREE.Color(0x00912a)],
+                [0.43, new THREE.Color(0x00e642)],
+                [0.57, new THREE.Color(0xffff00)],
+                [0.75, new THREE.Color(0xff9a00)],
+                [0.91, new THREE.Color(0xff2600)],
+                [1.00, new THREE.Color(0xff0000)]
+            ];
+
+            const seasons = [
+                { day: 79, label: "Mar Eq", full: "March equinox", emoji: "🌱" },
+                { day: 171, label: "Jun Sol", full: "June solstice", emoji: "☀️" },
+                { day: 265, label: "Sep Eq", full: "September equinox", emoji: "🍂" },
+                { day: 355, label: "Dec Sol", full: "December solstice", emoji: "❄️" }
+            ];
+
+            const months = [
+                ["Jan", 31], ["Feb", 28], ["Mar", 31], ["Apr", 30],
+                ["May", 31], ["Jun", 30], ["Jul", 31], ["Aug", 31],
+                ["Sep", 30], ["Oct", 31], ["Nov", 30], ["Dec", 31]
+            ];
+
+            const state = {
+                day: 171,
+                timeSec: 12 * 3600,
+                playing: false,
+                rate: 30,
+                energyAnalysis: false,
+                energyAnimate: false,
+                energyAnimTimeSec: SOLAR_DAY,
+                weather: 0,
+                objects: {
+                    fixedPanel: true,
+                    singleAxisFlatPanel: true,
+                    singleAxisTiltedPanel: true,
+                    trackingPanel: true,
+                    sunSync: true,
+                    polar: true,
+                    inclined55: true,
+                    vanAllenBelts: false
+                },
+                satellites: {
+                    sunSync: { alt: 500, mode: "nadir", phase: 0.2 },
+                    polar: { alt: 500, mode: "nadir", phase: 2.1 },
+                    inclined55: { alt: 500, mode: "nadir", phase: 4.0 }
+                }
+            };
+
+            const satConfig = {
+                sunSync: {
+                    label: "Sun-sync",
+                    kind: "sunSync",
+                    color: 0xf2d64a,
+                    raan0: null
+                },
+                polar: {
+                    label: "Polar",
+                    kind: "fixed",
+                    inc: 90 * DEG,
+                    color: 0xf2d64a,
+                    raan0: 36 * DEG
+                },
+                inclined55: {
+                    label: "30 deg",
+                    kind: "fixed",
+                    inc: 30 * DEG,
+                    color: 0xf2d64a,
+                    raan0: 132 * DEG
+                }
+            };
+
+            const elements = {
+                view: document.getElementById("view3d"),
+                controlRail: document.getElementById("control-rail"),
+                seasonCanvas: document.getElementById("season-canvas"),
+                seasonInfo: document.getElementById("season-info"),
+                energyPanel: document.getElementById("energy-panel"),
+                energyRows: document.getElementById("energy-rows"),
+                energyDateLabel: document.getElementById("energy-date-label"),
+                energyAnalysisBtn: document.getElementById("energy-analysis-btn"),
+                energyAnimateBtn: document.getElementById("energy-animate-btn"),
+                errorLog: document.getElementById("error-log"),
+                dateSlider: document.getElementById("date-slider"),
+                dateLabel: document.getElementById("date-label"),
+                timeSlider: document.getElementById("time-slider"),
+                timeInput: document.getElementById("time-input"),
+                weatherSlider: document.getElementById("weather-slider"),
+                weatherInput: document.getElementById("weather-input"),
+                rateSlider: document.getElementById("rate-slider"),
+                rateInput: document.getElementById("rate-input"),
+                playBtn: document.getElementById("play-btn"),
+                pauseBtn: document.getElementById("pause-btn"),
+                playState: document.getElementById("play-state"),
+                metricDate: document.getElementById("metric-date"),
+                metricTime: document.getElementById("metric-time"),
+                metricSun: document.getElementById("metric-sun"),
+                metricAz: document.getElementById("metric-az"),
+                sunSyncInc: document.getElementById("sunSync-inc"),
+                sunSyncNote: document.getElementById("sunSync-note"),
+                polarNote: document.getElementById("polar-note"),
+                inclined55Note: document.getElementById("inclined55-note")
+            };
+
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x171717, 0.0032);
+
+            const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 500);
+            camera.position.set(11, 7.2, 12);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setClearColor(0x171717, 1);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.82;
+            elements.view.appendChild(renderer.domElement);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.enablePan = false;
+            controls.minDistance = 5.35;
+            controls.maxDistance = 120;
+            controls.target.set(0, 0, 0);
+
+            const seasonInset = createSeasonInset();
+
+            const ambientLight = new THREE.AmbientLight(0x091120, 0.055);
+            scene.add(ambientLight);
+
+            const hemiLight = new THREE.HemisphereLight(0x5b8fc8, 0x010204, 0.11);
+            scene.add(hemiLight);
+
+            const sunLight = new THREE.DirectionalLight(0xfff0d4, 1.5);
+            sunLight.target.position.set(0, 0, 0);
+            scene.add(sunLight);
+            scene.add(sunLight.target);
+
+            const sunGroup = new THREE.Group();
+            scene.add(sunGroup);
+            const sunMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1.05, 48, 32),
+                new THREE.MeshBasicMaterial({ color: 0xffffff })
+            );
+            const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: makeGlowTexture(),
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.98,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                depthTest: false
+            }));
+            sunGlow.scale.set(14.5, 14.5, 1);
+            sunMesh.scale.setScalar(2.0);
+            sunMesh.material.transparent = true;
+            sunMesh.material.opacity = 1;
+            sunMesh.material.depthTest = false;
+            sunMesh.material.depthWrite = false;
+            sunMesh.material.toneMapped = false;
+            sunGlow.material.toneMapped = false;
+            sunGlow.renderOrder = 29;
+            sunMesh.renderOrder = 30;
+            sunGroup.add(sunGlow);
+            sunGroup.add(sunMesh);
+
+            const earthGroup = new THREE.Group();
+            scene.add(earthGroup);
+
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.crossOrigin = "anonymous";
+
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                color: 0x7f94aa,
+                specular: 0x02070d,
+                shininess: 4,
+                emissive: 0x000000,
+                emissiveIntensity: 0.01
+            });
+            const earth = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS, 96, 96),
+                earthMaterial
+            );
+            earthGroup.add(earth);
+            textureLoader.load(
+                "https://unpkg.com/three-globe/example/img/earth-day.jpg",
+                (texture) => {
+                    texture.encoding = THREE.sRGBEncoding;
+                    earthMaterial.map = texture;
+                    earthMaterial.color.setHex(0xd2dce6);
+                    earthMaterial.needsUpdate = true;
+                }
+            );
+
+            const atmosphere = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.025, 96, 96),
+                new THREE.MeshBasicMaterial({
+                    color: 0x54b9ff,
+                    transparent: true,
+                    opacity: 0.09,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                })
+            );
+            scene.add(atmosphere);
+
+            const cloudTexture = makeCloudTexture();
+            const stormTexture = makeStormTexture();
+            const rainTexture = makeRainTexture();
+            const lightningTexture = makeLightningTexture();
+            const cloudMaterial = new THREE.MeshBasicMaterial({
+                map: cloudTexture,
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0,
+                depthWrite: false
+            });
+            const cloudShell = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.018, 96, 96),
+                cloudMaterial
+            );
+            earthGroup.add(cloudShell);
+
+            const stormMaterial = new THREE.MeshBasicMaterial({
+                map: stormTexture,
+                color: 0x3d4655,
+                transparent: true,
+                opacity: 0,
+                depthWrite: false,
+                depthTest: true
+            });
+            const stormShell = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.026, 96, 96),
+                stormMaterial
+            );
+            earthGroup.add(stormShell);
+
+            const rainMaterial = new THREE.MeshBasicMaterial({
+                map: rainTexture,
+                color: 0x8fa6bc,
+                transparent: true,
+                opacity: 0,
+                depthWrite: false
+            });
+            const rainShell = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.04, 96, 96),
+                rainMaterial
+            );
+            earthGroup.add(rainShell);
+
+            const lightningMaterial = new THREE.MeshBasicMaterial({
+                map: lightningTexture,
+                color: 0xbfefff,
+                transparent: true,
+                opacity: 0,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            const lightningShell = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.043, 96, 96),
+                lightningMaterial
+            );
+            earthGroup.add(lightningShell);
+
+            const gridOverlay = new THREE.Mesh(
+                new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.004, 48, 48),
+                new THREE.MeshBasicMaterial({
+                    color: 0x3f8dbb,
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.012,
+                    depthWrite: false
+                })
+            );
+            earthGroup.add(gridOverlay);
+
+            const axisLine = makeLine(
+                [new THREE.Vector3(0, -EARTH_SCENE_RADIUS * 1.55, 0), new THREE.Vector3(0, EARTH_SCENE_RADIUS * 1.55, 0)],
+                0x45e4ff,
+                0.55
+            );
+            scene.add(axisLine);
+
+            const equatorLine = makeCircleLine(EARTH_SCENE_RADIUS * 1.012, 0xffffff, 0.075, "equator");
+            earthGroup.add(equatorLine);
+
+            const sunRayLine = makeLine([new THREE.Vector3(), new THREE.Vector3()], 0xffd45d, 0.35);
+            scene.add(sunRayLine);
+
+            addStars();
+
+            const radiationBelts = createRadiationBelts();
+            scene.add(radiationBelts.root);
+
+            const panelMeshes = {
+                fixedPanel: createSolarPanel("Fixed", ARIZONA.lat, ARIZONA.lon, 0x1f76d2, -0.78),
+                singleAxisFlatPanel: createSolarPanel("1x Flat", ARIZONA.lat, ARIZONA.lon, 0x45e4ff, -0.26),
+                singleAxisTiltedPanel: createSolarPanel("1x Tilt", ARIZONA.lat, ARIZONA.lon, 0x46e8a2, 0.26),
+                trackingPanel: createSolarPanel("2x Track", ARIZONA.lat, ARIZONA.lon, 0x35b2ff, 0.78)
+            };
+
+            const arizonaMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.065, 18, 12),
+                new THREE.MeshBasicMaterial({ color: 0xffd84f })
+            );
+            arizonaMarker.position.copy(latLonToLocal(ARIZONA.lat, ARIZONA.lon, EARTH_SCENE_RADIUS + 0.09));
+            earthGroup.add(arizonaMarker);
+
+            const satelliteMeshes = {};
+            for (const id of Object.keys(state.satellites)) {
+                satelliteMeshes[id] = createSatellite(id);
+            }
+
+            satConfig.sunSync.raan0 = sunRightAscensionForDay(0) - Math.PI / 2;
+
+            function showError(error) {
+                elements.errorLog.style.display = "block";
+                elements.errorLog.textContent += `${error.message || error}\n${error.stack || ""}\n`;
+            }
+
+            function addStars() {
+                const count = 2800;
+                const positions = new Float32Array(count * 3);
+                for (let i = 0; i < count; i++) {
+                    const r = 125 + Math.random() * 170;
+                    const theta = Math.random() * TWO_PI;
+                    const u = Math.random() * 2 - 1;
+                    const root = Math.sqrt(1 - u * u);
+                    positions[i * 3] = r * root * Math.cos(theta);
+                    positions[i * 3 + 1] = r * u;
+                    positions[i * 3 + 2] = r * root * Math.sin(theta);
+                }
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+                const stars = new THREE.Points(
+                    geometry,
+                    new THREE.PointsMaterial({
+                        color: 0xdcecff,
+                        size: 0.13,
+                        sizeAttenuation: true,
+                        transparent: true,
+                        opacity: 0.72
+                    })
+                );
+                scene.add(stars);
+            }
+
+            function makeCloudTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let seed = 19;
+                const rand = () => {
+                    seed = (seed * 1664525 + 1013904223) >>> 0;
+                    return seed / 4294967296;
+                };
+                for (let band = 0; band < 9; band++) {
+                    const yBase = 70 + band * 45 + (rand() - 0.5) * 28;
+                    for (let i = 0; i < 58; i++) {
+                        const x = rand() * canvas.width;
+                        const y = yBase + (rand() - 0.5) * 52;
+                        const rx = 22 + rand() * 78;
+                        const ry = 8 + rand() * 24;
+                        const alpha = 0.08 + rand() * 0.16;
+                        const grad = ctx.createRadialGradient(x, y, 0, x, y, rx);
+                        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                        grad.addColorStop(1, "rgba(255,255,255,0)");
+                        ctx.fillStyle = grad;
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, rx, ry, (rand() - 0.5) * 0.8, 0, TWO_PI);
+                        ctx.fill();
+                    }
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                texture.encoding = THREE.sRGBEncoding;
+                return texture;
+            }
+
+            function makeStormTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let seed = 73;
+                const rand = () => {
+                    seed = (seed * 1103515245 + 12345) >>> 0;
+                    return seed / 4294967296;
+                };
+                for (let band = 0; band < 13; band++) {
+                    const yBase = 28 + band * 39 + (rand() - 0.5) * 24;
+                    for (let i = 0; i < 92; i++) {
+                        const x = rand() * canvas.width;
+                        const y = yBase + (rand() - 0.5) * 58;
+                        const rx = 34 + rand() * 116;
+                        const ry = 13 + rand() * 36;
+                        const alpha = 0.15 + rand() * 0.27;
+                        const grad = ctx.createRadialGradient(x, y, 0, x, y, rx);
+                        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                        grad.addColorStop(0.56, `rgba(255,255,255,${alpha * 0.48})`);
+                        grad.addColorStop(1, "rgba(255,255,255,0)");
+                        ctx.fillStyle = grad;
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, rx, ry, (rand() - 0.5) * 1.1, 0, TWO_PI);
+                        ctx.fill();
+                    }
+                }
+                for (let cell = 0; cell < 8; cell++) {
+                    const cx = rand() * canvas.width;
+                    const cy = 70 + rand() * 360;
+                    for (let ring = 0; ring < 5; ring++) {
+                        ctx.strokeStyle = `rgba(255,255,255,${0.11 - ring * 0.015})`;
+                        ctx.lineWidth = 15 - ring * 2;
+                        ctx.beginPath();
+                        ctx.ellipse(cx, cy, 54 + ring * 24, 18 + ring * 9, (rand() - 0.5) * 1.4, 0, TWO_PI);
+                        ctx.stroke();
+                    }
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                texture.encoding = THREE.sRGBEncoding;
+                return texture;
+            }
+
+            function makeRainTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let seed = 211;
+                const rand = () => {
+                    seed = (seed * 1664525 + 1013904223) >>> 0;
+                    return seed / 4294967296;
+                };
+                ctx.lineCap = "round";
+                for (let i = 0; i < 900; i++) {
+                    const x = rand() * canvas.width;
+                    const y = rand() * canvas.height;
+                    const len = 7 + rand() * 22;
+                    const alpha = 0.045 + rand() * 0.10;
+                    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+                    ctx.lineWidth = 0.7 + rand() * 1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x - len * 0.32, y + len);
+                    ctx.stroke();
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                texture.encoding = THREE.sRGBEncoding;
+                return texture;
+            }
+
+            function makeLightningTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let seed = 421;
+                const rand = () => {
+                    seed = (seed * 1664525 + 1013904223) >>> 0;
+                    return seed / 4294967296;
+                };
+                for (let bolt = 0; bolt < 10; bolt++) {
+                    let x = rand() * canvas.width;
+                    let y = 60 + rand() * 330;
+                    ctx.strokeStyle = "rgba(255,255,255,0.82)";
+                    ctx.lineWidth = 2 + rand() * 2;
+                    ctx.shadowColor = "rgba(120,210,255,0.9)";
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    for (let step = 0; step < 7; step++) {
+                        x += (rand() - 0.5) * 34;
+                        y += 12 + rand() * 23;
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                texture.encoding = THREE.sRGBEncoding;
+                return texture;
+            }
+
+            function makeLine(points, color, opacity) {
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({
+                    color,
+                    transparent: opacity < 1,
+                    opacity
+                });
+                return new THREE.Line(geometry, material);
+            }
+
+            function makeCircleLine(radius, color, opacity, plane) {
+                const points = [];
+                const steps = 240;
+                for (let i = 0; i <= steps; i++) {
+                    const a = i / steps * TWO_PI;
+                    if (plane === "equator") points.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
+                    else points.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
+                }
+                return makeLine(points, color, opacity);
+            }
+
+            function radiationHeatIntensity(lShell, latitudeFactor = 0) {
+                const inner = Math.exp(-Math.pow((lShell - 1.52) / 0.34, 2)) * 1.18;
+                const outer = Math.exp(-Math.pow((lShell - 4.35) / 1.12, 2)) * 1.08;
+                const slotFloor = Math.exp(-Math.pow((lShell - 2.45) / 0.78, 2)) * 0.18;
+                const bridge = Math.exp(-Math.pow((lShell - 3.1) / 2.15, 2)) * 0.22;
+                const outerFade = Math.exp(-Math.pow((lShell - 6.15) / 1.45, 2)) * 0.16;
+                const latitudeFalloff = 0.19 + 0.81 * Math.exp(-latitudeFactor * latitudeFactor * 1.72);
+                return THREE.MathUtils.clamp((inner + outer + slotFloor + bridge + outerFade) * latitudeFalloff + 0.02, 0.01, 1);
+            }
+
+            function heatmapColor(intensity, target = new THREE.Color()) {
+                const value = THREE.MathUtils.clamp(intensity, 0, 1);
+                for (let i = 0; i < HEATMAP_COLOR_STOPS.length - 1; i++) {
+                    const [aStop, aColor] = HEATMAP_COLOR_STOPS[i];
+                    const [bStop, bColor] = HEATMAP_COLOR_STOPS[i + 1];
+                    if (value <= bStop) {
+                        const mix = (value - aStop) / Math.max(bStop - aStop, 0.0001);
+                        return target.copy(aColor).lerp(bColor, mix);
+                    }
+                }
+                return target.copy(HEATMAP_COLOR_STOPS[HEATMAP_COLOR_STOPS.length - 1][1]);
+            }
+
+            function dipoleLatitudeLimit(lShell) {
+                return Math.acos(Math.sqrt(1 / Math.max(lShell, 1.0001))) * 0.985;
+            }
+
+            function radiationLocalPoint(lShell, lambda, phi, sunLocal, seasonPressure, target = new THREE.Vector3()) {
+                const cosLat = Math.cos(lambda);
+                const r = EARTH_SCENE_RADIUS * lShell * cosLat * cosLat;
+                const rho = r * cosLat;
+                target.set(
+                    rho * Math.cos(phi),
+                    r * Math.sin(lambda),
+                    rho * Math.sin(phi)
+                );
+
+                const alongSun = target.dot(sunLocal);
+                const localRadius = Math.max(EARTH_SCENE_RADIUS * lShell, 0.001);
+                const side = THREE.MathUtils.clamp(alongSun / localRadius, -1, 1);
+                const scale = side >= 0
+                    ? 1 - seasonPressure * 0.13 * side
+                    : 1 + seasonPressure * 0.29 * -side;
+                target.addScaledVector(sunLocal, alongSun * (scale - 1));
+                return target;
+            }
+
+            function makeRadiationParticleTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 128;
+                canvas.height = 128;
+                const ctx = canvas.getContext("2d");
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
+                grad.addColorStop(0.00, "rgba(255,255,255,0.18)");
+                grad.addColorStop(0.18, "rgba(255,255,255,0.28)");
+                grad.addColorStop(0.42, "rgba(255,255,255,0.18)");
+                grad.addColorStop(0.74, "rgba(255,255,255,0.055)");
+                grad.addColorStop(1.00, "rgba(255,255,255,0)");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                return texture;
+            }
+
+            function createRadiationBelts() {
+                const root = new THREE.Group();
+                root.visible = false;
+
+                let seed = 2971215073;
+                const rand = () => {
+                    seed = (seed * 1664525 + 1013904223) >>> 0;
+                    return seed / 4294967296;
+                };
+                const randNormal = () => {
+                    const u = Math.max(rand(), 1e-6);
+                    return Math.sqrt(-2 * Math.log(u)) * Math.cos(TWO_PI * rand());
+                };
+                const sampleShell = () => {
+                    const band = rand();
+                    if (band < 0.18) return THREE.MathUtils.clamp(1.52 + randNormal() * 0.34, 1.12, 2.25);
+                    if (band < 0.68) return THREE.MathUtils.clamp(4.35 + randNormal() * 1.18, 2.45, 6.95);
+                    if (band < 0.89) return 4.95 + Math.pow(rand(), 0.62) * 2.08;
+                    return 1.14 + Math.pow(rand(), 0.72) * 5.68;
+                };
+
+                const beltParticleCount = 264000;
+                const envelopeParticleCount = 30000;
+                const particleCount = beltParticleCount + envelopeParticleCount;
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                const sizes = new Float32Array(particleCount);
+                const lShells = new Float32Array(particleCount);
+                const lambdas = new Float32Array(particleCount);
+                const phis = new Float32Array(particleCount);
+                const latFactors = new Float32Array(particleCount);
+                const phases = new Float32Array(particleCount);
+                const speckles = new Float32Array(particleCount);
+                const envelopeFactors = new Float32Array(particleCount);
+
+                for (let i = 0; i < particleCount; i++) {
+                    const envelope = i >= beltParticleCount ? 1 : 0;
+                    const lShell = envelope
+                        ? 6.45 + Math.pow(rand(), 0.92) * 3.75
+                        : sampleShell();
+                    const latMax = dipoleLatitudeLimit(lShell);
+                    const rawLat = rand() * 2 - 1;
+                    const farHalo = THREE.MathUtils.smoothstep(lShell, 5.8, 9.7);
+                    const latScale = envelope
+                        ? 0.16 + rand() * 0.34
+                        : (0.68 + rand() * 0.31) * (1 - farHalo) + (0.16 + rand() * 0.26) * farHalo;
+                    const lambda = Math.sign(rawLat || 1) * Math.pow(Math.abs(rawLat), 0.82) * latMax * latScale;
+                    const latFactor = Math.abs(lambda) / Math.max(latMax, 0.001);
+                    lShells[i] = lShell;
+                    lambdas[i] = lambda;
+                    phis[i] = rand() * TWO_PI;
+                    latFactors[i] = latFactor;
+                    phases[i] = rand() * TWO_PI;
+                    speckles[i] = 0.88 + rand() * 0.16;
+                    envelopeFactors[i] = envelope;
+                    const shellScale = THREE.MathUtils.clamp((lShell - 1.12) / 8.9, 0, 1);
+                    sizes[i] = envelope
+                        ? 8.8 + Math.pow(shellScale, 0.7) * 5.4 + rand() * 1.1
+                        : 3.55 + Math.pow(shellScale, 0.72) * 7.45 + farHalo * 1.9 + rand() * 0.35;
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+                geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+                geometry.setAttribute("radiationSize", new THREE.BufferAttribute(sizes, 1));
+                geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), EARTH_SCENE_RADIUS * 13.8);
+
+                const rendererSize = renderer.getSize(new THREE.Vector2());
+                const particleMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        pointTexture: { value: makeRadiationParticleTexture() },
+                        opacity: { value: 0.0105 },
+                        uScale: { value: Math.max(rendererSize.height, 1) * renderer.getPixelRatio() * 0.5 }
+                    },
+                    vertexShader: `
+                        attribute vec3 color;
+                        attribute float radiationSize;
+                        uniform float uScale;
+                        varying vec3 vColor;
+                        void main() {
+                            vColor = color;
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = radiationSize * (uScale / max(-mvPosition.z, 0.001));
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D pointTexture;
+                        uniform float opacity;
+                        varying vec3 vColor;
+                        void main() {
+                            vec4 texel = texture2D(pointTexture, gl_PointCoord);
+                            if (texel.a < 0.001) discard;
+                            gl_FragColor = vec4(vColor, texel.a * opacity);
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthTest: true,
+                    depthWrite: false,
+                    toneMapped: false
+                });
+
+                const particles = new THREE.Points(
+                    geometry,
+                    particleMaterial
+                );
+                particles.frustumCulled = false;
+                particles.renderOrder = 7;
+                root.add(particles);
+
+                return {
+                    root,
+                    particles,
+                    material: particleMaterial,
+                    lShells,
+                    lambdas,
+                    phis,
+                    latFactors,
+                    phases,
+                    speckles,
+                    envelopeFactors,
+                    elapsed: 0,
+                    lastSunKey: "",
+                    inverseQuatScratch: new THREE.Quaternion(),
+                    cameraLocalScratch: new THREE.Vector3(),
+                    pointScratch: new THREE.Vector3(),
+                    colorScratch: new THREE.Color()
+                };
+            }
+
+            function updateRadiationBelts(frameDt, sunDir) {
+                radiationBelts.root.visible = !!state.objects.vanAllenBelts;
+                if (!radiationBelts.root.visible) return;
+
+                radiationBelts.elapsed += Math.min(frameDt, 0.05);
+
+                const seasonalLean = -THREE.MathUtils.clamp(sunDir.y / Math.sin(OBLIQUITY), -1, 1);
+                const sunHorizontal = new THREE.Vector3(sunDir.x, 0, sunDir.z);
+                if (sunHorizontal.lengthSq() < 0.001) sunHorizontal.set(1, 0, 0);
+                sunHorizontal.normalize();
+                const magneticAxis = NORTH_Y.clone().multiplyScalar(Math.cos(11 * DEG))
+                    .add(sunHorizontal.multiplyScalar(Math.sin(11 * DEG) * seasonalLean))
+                    .normalize();
+                radiationBelts.root.quaternion.setFromUnitVectors(NORTH_Y, magneticAxis);
+
+                const inverseRoot = radiationBelts.inverseQuatScratch.copy(radiationBelts.root.quaternion).invert();
+                const sunLocal = sunDir.clone().applyQuaternion(inverseRoot).normalize();
+                const cameraLocal = radiationBelts.cameraLocalScratch.copy(camera.position).applyQuaternion(inverseRoot);
+                const seasonPressure = 0.78 + 0.22 * Math.abs(seasonalLean);
+                const sunKey = `${sunLocal.x.toFixed(4)},${sunLocal.y.toFixed(4)},${sunLocal.z.toFixed(4)},${seasonPressure.toFixed(4)},${cameraLocal.x.toFixed(2)},${cameraLocal.y.toFixed(2)},${cameraLocal.z.toFixed(2)}`;
+                if (sunKey === radiationBelts.lastSunKey) return;
+                radiationBelts.lastSunKey = sunKey;
+                const positionAttr = radiationBelts.particles.geometry.attributes.position;
+                const colorAttr = radiationBelts.particles.geometry.attributes.color;
+                const color = radiationBelts.colorScratch;
+                const point = radiationBelts.pointScratch;
+
+                for (let i = 0; i < radiationBelts.lShells.length; i++) {
+                    radiationLocalPoint(
+                        radiationBelts.lShells[i],
+                        radiationBelts.lambdas[i],
+                        radiationBelts.phis[i],
+                        sunLocal,
+                        seasonPressure,
+                        point
+                    );
+                    positionAttr.setXYZ(i, point.x, point.y, point.z);
+
+                    const rayX = point.x - cameraLocal.x;
+                    const rayY = point.y - cameraLocal.y;
+                    const rayZ = point.z - cameraLocal.z;
+                    const pointDistance = Math.max(Math.sqrt(rayX * rayX + rayY * rayY + rayZ * rayZ), 0.001);
+                    const centerAlongRay = -(cameraLocal.x * rayX + cameraLocal.y * rayY + cameraLocal.z * rayZ) / pointDistance;
+                    const closestSq = Math.max(cameraLocal.lengthSq() - centerAlongRay * centerAlongRay, 0);
+                    let earthDiskFade = 1;
+                    if (centerAlongRay > pointDistance && closestSq < Math.pow(EARTH_SCENE_RADIUS * 1.28, 2)) {
+                        const closest = Math.sqrt(closestSq);
+                        earthDiskFade = 0.06 + 0.94 * THREE.MathUtils.smoothstep(closest, EARTH_SCENE_RADIUS * 0.86, EARTH_SCENE_RADIUS * 1.28);
+                    }
+
+                    const pointLen = Math.max(Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z), 0.001);
+                    const sunSide = (point.x * sunLocal.x + point.y * sunLocal.y + point.z * sunLocal.z) / pointLen;
+                    const staticTexture = 0.96 + 0.04 * Math.sin(radiationBelts.phis[i] * 3.1 + radiationBelts.phases[i]);
+                    const flankBoost = 0.92 + 0.13 * Math.sqrt(Math.max(0, 1 - sunSide * sunSide));
+                    const heatStrength = THREE.MathUtils.clamp(
+                        radiationHeatIntensity(radiationBelts.lShells[i], radiationBelts.latFactors[i]) * staticTexture * flankBoost,
+                        0.012,
+                        1
+                    );
+                    const envelope = radiationBelts.envelopeFactors[i];
+                    const farHalo = THREE.MathUtils.smoothstep(radiationBelts.lShells[i], 5.8, 9.7);
+                    const dynamicHeat = THREE.MathUtils.clamp((heatStrength - 0.08) / 0.92, 0, 1);
+                    const envelopeT = envelope > 0.5
+                        ? THREE.MathUtils.clamp((radiationBelts.lShells[i] - 6.45) / 3.75, 0, 1)
+                        : 0;
+                    const colorHeat = envelope > 0.5
+                        ? 0.33 * Math.pow(1 - envelopeT, 0.86) + 0.08 * envelopeT
+                        : Math.pow(dynamicHeat, 1.28);
+                    heatmapColor(colorHeat, color);
+                    const brightnessHeat = Math.pow(heatStrength, 0.72);
+                    const colorBalance = 0.68 + 0.55 * Math.sin(Math.PI * colorHeat) + 0.08 * (1 - colorHeat);
+                    const envelopeFade = envelope > 0.5
+                        ? (0.78 + 0.22 * Math.sin(Math.PI * envelopeT)) * (1 - 0.58 * envelopeT)
+                        : 1;
+                    const brightness = radiationBelts.speckles[i] * earthDiskFade * envelopeFade * (1 + 0.48 * farHalo) * colorBalance * (0.24 + 0.76 * brightnessHeat);
+                    colorAttr.setXYZ(
+                        i,
+                        Math.min(color.r * brightness, 1),
+                        Math.min(color.g * brightness, 1),
+                        Math.min(color.b * brightness, 1)
+                    );
+                }
+
+                positionAttr.needsUpdate = true;
+                colorAttr.needsUpdate = true;
+            }
+
+            function makeSeasonLine(points, color, opacity, dashed = false, dashSize = 0.14, gapSize = 0.09) {
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = dashed
+                    ? new THREE.LineDashedMaterial({ color, transparent: opacity < 1, opacity, dashSize, gapSize })
+                    : new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity });
+                const line = new THREE.Line(geometry, material);
+                if (dashed) line.computeLineDistances();
+                return line;
+            }
+
+            function makeDynamicSeasonLine(pointCount, material) {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(pointCount * 3);
+                geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+                const line = new THREE.Line(geometry, material);
+                line.userData.pointCount = pointCount;
+                return line;
+            }
+
+            function setDynamicLinePoint(line, index, point) {
+                const attr = line.geometry.attributes.position;
+                attr.setXYZ(index, point.x, point.y, point.z);
+                attr.needsUpdate = true;
+            }
+
+            function makeTextSprite(text, color = "#d8e6f5", scale = 0.32) {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const fontSize = 26;
+                ctx.font = `800 ${fontSize}px "Segoe UI Emoji", "Segoe UI", sans-serif`;
+                const metrics = ctx.measureText(text);
+                canvas.width = Math.ceil(metrics.width + 28);
+                canvas.height = 46;
+                ctx.font = `800 ${fontSize}px "Segoe UI Emoji", "Segoe UI", sans-serif`;
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = "rgba(0,0,0,0.52)";
+                ctx.fillText(text, 15, canvas.height / 2 + 2);
+                ctx.fillStyle = color;
+                ctx.fillText(text, 14, canvas.height / 2);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.minFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+                sprite.scale.set((canvas.width / canvas.height) * scale, scale, 1);
+                return sprite;
+            }
+
+            function makeGlowTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext("2d");
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
+                grad.addColorStop(0.00, "rgba(255,255,255,1)");
+                grad.addColorStop(0.12, "rgba(255,255,255,0.98)");
+                grad.addColorStop(0.26, "rgba(255,244,210,0.54)");
+                grad.addColorStop(0.52, "rgba(255,202,96,0.18)");
+                grad.addColorStop(1.00, "rgba(255,202,96,0)");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.minFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                return texture;
+            }
+
+            function eclipticSunDirectionForDay(day) {
+                const a = TWO_PI * ((day - VERNAL_EQUINOX_DAY) / YEAR_DAYS);
+                return new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).normalize();
+            }
+
+            function equatorialToEcliptic(vector) {
+                const transformed = vector.clone().applyQuaternion(EQ_TO_ECLIPTIC);
+                transformed.z *= -1;
+                return transformed;
+            }
+
+            function createSeasonInset() {
+                const insetRenderer = new THREE.WebGLRenderer({
+                    canvas: elements.seasonCanvas,
+                    antialias: true,
+                    alpha: false,
+                    powerPreference: "high-performance"
+                });
+                insetRenderer.setClearColor(0x171717, 1);
+                insetRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                insetRenderer.outputEncoding = THREE.sRGBEncoding;
+                insetRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+                insetRenderer.toneMappingExposure = 1.06;
+
+                const insetScene = new THREE.Scene();
+                insetScene.fog = new THREE.FogExp2(0x171717, 0.055);
+
+                const insetCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
+                insetCamera.position.set(7.6, 4.8, 8.2);
+
+                const insetControls = new THREE.OrbitControls(insetCamera, insetRenderer.domElement);
+                insetControls.enableDamping = true;
+                insetControls.dampingFactor = 0.08;
+                insetControls.enablePan = false;
+                insetControls.rotateSpeed = 0.68;
+                insetControls.zoomSpeed = 0.62;
+                insetControls.minDistance = 3.2;
+                insetControls.maxDistance = 24;
+                insetControls.target.set(0, 0, 0);
+
+                insetScene.add(new THREE.AmbientLight(0x7b91aa, 0.065));
+                const sunLight = new THREE.PointLight(0xffffff, 4.2, 30, 1.25);
+                sunLight.position.set(0, 0, 0);
+                insetScene.add(sunLight);
+
+                const root = new THREE.Group();
+                insetScene.add(root);
+
+                const orbitRadius = 5.0;
+                const earthRadius = 0.42;
+                const orbitPoints = [];
+                for (let i = 0; i <= 360; i++) {
+                    const a = i / 360 * TWO_PI;
+                    orbitPoints.push(new THREE.Vector3(Math.cos(a) * orbitRadius, 0, Math.sin(a) * orbitRadius));
+                }
+                root.add(makeSeasonLine(orbitPoints, 0x48a4ff, 0.24));
+                root.add(makeSeasonLine(orbitPoints, 0xf2d64a, 0.72, true, 0.18, 0.12));
+
+                const highlightLine = makeDynamicSeasonLine(48, new THREE.LineBasicMaterial({
+                    color: 0xffe256,
+                    transparent: true,
+                    opacity: 0.98
+                }));
+                root.add(highlightLine);
+
+                const sunGroup = new THREE.Group();
+                root.add(sunGroup);
+                const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: makeGlowTexture(),
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.98,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    depthTest: false
+                }));
+                sunGlow.scale.set(2.15, 2.15, 1);
+                sunGroup.add(sunGlow);
+                sunGroup.add(new THREE.Mesh(
+                    new THREE.SphereGeometry(0.34, 40, 28),
+                    new THREE.MeshBasicMaterial({ color: 0xffffff })
+                ));
+                const sunLabel = makeTextSprite("Sun", "#ffe398", 0.25);
+                sunLabel.position.set(0, 0.72, 0);
+                sunGroup.add(sunLabel);
+
+                const seasonMarkers = [];
+                for (const item of seasons) {
+                    const sun = eclipticSunDirectionForDay(item.day);
+                    const position = sun.multiplyScalar(-orbitRadius);
+                    const marker = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.055, 12, 8),
+                        new THREE.MeshBasicMaterial({ color: 0xffe256 })
+                    );
+                    marker.position.copy(position);
+                    root.add(marker);
+                    const label = makeTextSprite(`${item.emoji} ${item.label}`, "#c9d9e9", 0.21);
+                    label.position.copy(position).add(new THREE.Vector3(0, 0.42, 0));
+                    root.add(label);
+                    seasonMarkers.push({ marker, label });
+                }
+
+                const earthGroup = new THREE.Group();
+                root.add(earthGroup);
+                const earth = new THREE.Mesh(
+                    new THREE.SphereGeometry(earthRadius, 32, 24),
+                    new THREE.MeshPhongMaterial({
+                        color: 0x4ca6ef,
+                        emissive: 0x00040a,
+                        shininess: 36,
+                        specular: 0xc8f5ff
+                    })
+                );
+                earthGroup.add(earth);
+                earthGroup.add(new THREE.Mesh(
+                    new THREE.SphereGeometry(earthRadius * 1.06, 32, 24),
+                    new THREE.MeshBasicMaterial({
+                        color: 0x54b9ff,
+                        transparent: true,
+                        opacity: 0.12,
+                        blending: THREE.AdditiveBlending,
+                        depthWrite: false
+                    })
+                ));
+
+                const earthAxis = equatorialToEcliptic(NORTH_Y).normalize();
+                const axisLine = makeSeasonLine([
+                    earthAxis.clone().multiplyScalar(-earthRadius * 1.9),
+                    earthAxis.clone().multiplyScalar(earthRadius * 1.9)
+                ], 0x45e4ff, 0.95);
+                earthGroup.add(axisLine);
+
+                const equatorPoints = [];
+                for (let i = 0; i <= 160; i++) {
+                    equatorPoints.push(orbitPointFromNormal(earthAxis, i / 160 * TWO_PI).multiplyScalar(earthRadius * 1.08));
+                }
+                earthGroup.add(makeSeasonLine(equatorPoints, 0x9fd2ff, 0.36));
+
+                const earthSunLine = makeDynamicSeasonLine(2, new THREE.LineBasicMaterial({
+                    color: 0xffd45d,
+                    transparent: true,
+                    opacity: 0.48
+                }));
+                root.add(earthSunLine);
+
+                const satelliteLines = {};
+                for (const id of ["sunSync", "polar", "inclined55"]) {
+                    const pointCount = 193;
+                    const material = id === "sunSync"
+                        ? new THREE.LineDashedMaterial({ color: 0xffef72, transparent: true, opacity: 0.96, dashSize: 0.12, gapSize: 0.075 })
+                        : new THREE.LineBasicMaterial({ color: 0xf2d64a, transparent: true, opacity: 0.68 });
+                    const line = makeDynamicSeasonLine(pointCount, material);
+                    const marker = new THREE.Mesh(
+                        new THREE.SphereGeometry(id === "sunSync" ? 0.052 : 0.044, 12, 8),
+                        new THREE.MeshBasicMaterial({ color: id === "sunSync" ? 0xfff4a0 : 0xf2d64a })
+                    );
+                    root.add(line);
+                    root.add(marker);
+                    satelliteLines[id] = { line, marker, pointCount };
+                }
+
+                return {
+                    renderer: insetRenderer,
+                    scene: insetScene,
+                    camera: insetCamera,
+                    controls: insetControls,
+                    root,
+                    orbitRadius,
+                    earthRadius,
+                    earthGroup,
+                    highlightLine,
+                    earthSunLine,
+                    satelliteLines
+                };
+            }
+
+            function latLonToLocal(latDeg, lonDeg, radius) {
+                const lat = latDeg * DEG;
+                const lon = lonDeg * DEG;
+                const c = Math.cos(lat);
+                return new THREE.Vector3(
+                    c * Math.cos(lon) * radius,
+                    Math.sin(lat) * radius,
+                    -c * Math.sin(lon) * radius
+                );
+            }
+
+            function localFrameForLatLon(latDeg, lonDeg) {
+                const lon = lonDeg * DEG;
+                const up = latLonToLocal(latDeg, lonDeg, 1).normalize();
+                const east = new THREE.Vector3(-Math.sin(lon), 0, -Math.cos(lon)).normalize();
+                const north = new THREE.Vector3().crossVectors(up, east).normalize();
+                return { east, north, up };
+            }
+
+            function quaternionFromBasis(xAxis, yAxis, zAxis) {
+                const matrix = new THREE.Matrix4().makeBasis(
+                    xAxis.clone().normalize(),
+                    yAxis.clone().normalize(),
+                    zAxis.clone().normalize()
+                );
+                return new THREE.Quaternion().setFromRotationMatrix(matrix);
+            }
+
+            function quaternionFromNormalAndXAxis(normal, preferredX) {
+                const zAxis = normal.clone().normalize();
+                let xAxis = preferredX.clone().sub(zAxis.clone().multiplyScalar(preferredX.dot(zAxis)));
+                if (xAxis.lengthSq() < 1e-6) {
+                    xAxis = new THREE.Vector3(0, 1, 0).sub(zAxis.clone().multiplyScalar(zAxis.y));
+                }
+                if (xAxis.lengthSq() < 1e-6) xAxis = new THREE.Vector3(1, 0, 0);
+                xAxis.normalize();
+                const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+                return quaternionFromBasis(xAxis, yAxis, zAxis);
+            }
+
+            function quaternionFromNormalAndYAxis(normal, preferredY) {
+                const zAxis = normal.clone().normalize();
+                let yAxis = preferredY.clone().sub(zAxis.clone().multiplyScalar(preferredY.dot(zAxis)));
+                if (yAxis.lengthSq() < 1e-6) {
+                    yAxis = new THREE.Vector3(0, 1, 0).sub(zAxis.clone().multiplyScalar(zAxis.y));
+                }
+                if (yAxis.lengthSq() < 1e-6) yAxis = new THREE.Vector3(1, 0, 0);
+                yAxis.normalize();
+                const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+                return quaternionFromBasis(xAxis, yAxis, zAxis);
+            }
+
+            function createSolarPanel(label, lat, lon, accent, visualEastOffset = 0, visualNorthOffset = 0) {
+                const root = new THREE.Group();
+                const surfaceFrame = localFrameForLatLon(lat, lon);
+                root.userData.lat = lat;
+                root.userData.lon = lon;
+                root.userData.surfaceNormal = surfaceFrame.up;
+                root.userData.east = surfaceFrame.east;
+                root.userData.north = surfaceFrame.north;
+                root.position.copy(latLonToLocal(lat, lon, EARTH_SCENE_RADIUS + 0.105)
+                    .add(surfaceFrame.east.clone().multiplyScalar(visualEastOffset))
+                    .add(surfaceFrame.north.clone().multiplyScalar(visualNorthOffset)));
+                root.quaternion.copy(quaternionFromBasis(surfaceFrame.east, surfaceFrame.north, surfaceFrame.up));
+
+                const mast = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.025, 0.035, 0.28, 12),
+                    new THREE.MeshPhongMaterial({ color: 0xb7c1ca, emissive: 0x111820, shininess: 20 })
+                );
+                mast.rotation.x = Math.PI / 2;
+                mast.position.z = 0.02;
+                root.add(mast);
+
+                const pivot = new THREE.Group();
+                pivot.position.z = 0.18;
+                root.add(pivot);
+                root.userData.pivot = pivot;
+
+                const panel = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.9, 0.54, 0.035),
+                    new THREE.MeshPhongMaterial({
+                        color: 0x112748,
+                        specular: 0x4fc3ff,
+                        shininess: 70,
+                        emissive: accent,
+                        emissiveIntensity: 0.08
+                    })
+                );
+                pivot.add(panel);
+
+                const frame = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.92, 0.56, 0.04)),
+                    new THREE.LineBasicMaterial({ color: 0x99d7ff, transparent: true, opacity: 0.55 })
+                );
+                pivot.add(frame);
+
+                const grid = new THREE.Group();
+                const gridMat = new THREE.LineBasicMaterial({ color: 0x68bfff, transparent: true, opacity: 0.34 });
+                for (let i = -3; i <= 3; i++) {
+                    const x = i * 0.12;
+                    grid.add(makeLine([new THREE.Vector3(x, -0.25, 0.023), new THREE.Vector3(x, 0.25, 0.023)], 0x68bfff, 0.34));
+                }
+                for (let i = -1; i <= 1; i++) {
+                    const y = i * 0.13;
+                    grid.add(makeLine([new THREE.Vector3(-0.43, y, 0.024), new THREE.Vector3(0.43, y, 0.024)], 0x68bfff, 0.34));
+                }
+                grid.children.forEach((child) => {
+                    child.material.dispose();
+                    child.material = gridMat;
+                });
+                pivot.add(grid);
+
+                const tag = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.035, 12, 8),
+                    new THREE.MeshBasicMaterial({ color: accent })
+                );
+                tag.position.set(-0.52, 0, 0.06);
+                pivot.add(tag);
+
+                root.userData.label = label;
+                earthGroup.add(root);
+                return root;
+            }
+
+            function createSatellite(id) {
+                const root = new THREE.Group();
+                const accent = id === "sunSync" ? 0xffd84f : id === "polar" ? 0x45e4ff : 0x46e8a2;
+
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.34, 0.22, 0.22),
+                    new THREE.MeshPhongMaterial({
+                        color: 0xd7dde4,
+                        specular: 0xffffff,
+                        shininess: 45,
+                        emissive: 0x11151d
+                    })
+                );
+                root.add(body);
+
+                const aperture = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.075, 0.075, 0.03, 24),
+                    new THREE.MeshPhongMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.2 })
+                );
+                aperture.rotation.x = Math.PI / 2;
+                aperture.position.z = 0.13;
+                root.add(aperture);
+
+                const wingMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x174d8f,
+                    specular: 0x72d6ff,
+                    shininess: 50,
+                    emissive: 0x082548
+                });
+                const leftWing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.13, 0.018), wingMaterial);
+                leftWing.position.x = -0.46;
+                root.add(leftWing);
+                const rightWing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.13, 0.018), wingMaterial);
+                rightWing.position.x = 0.46;
+                root.add(rightWing);
+
+                const outline = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.24, 0.26, 0.24)),
+                    new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.28 })
+                );
+                root.add(outline);
+
+                scene.add(root);
+
+                const orbitPoints = 288;
+                const positions = new Float32Array(orbitPoints * 3);
+                const orbitGeometry = new THREE.BufferGeometry();
+                orbitGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+                const orbitLine = new THREE.LineLoop(
+                    orbitGeometry,
+                    new THREE.LineBasicMaterial({
+                        color: 0xf2d64a,
+                        transparent: true,
+                        opacity: 0.76
+                    })
+                );
+                scene.add(orbitLine);
+
+                return {
+                    root,
+                    orbitLine,
+                    orbitPoints,
+                    bodyMaterial: body.material,
+                    apertureMaterial: aperture.material,
+                    wingMaterial,
+                    outlineMaterial: outline.material,
+                    accent
+                };
+            }
+
+            function orbitalElements(id, t) {
+                const sat = state.satellites[id];
+                const config = satConfig[id];
+                const a = EARTH_RADIUS_KM + sat.alt;
+                const n = Math.sqrt(MU / Math.pow(a, 3));
+                const inc = config.kind === "sunSync" ? sunSyncInclination(sat.alt) : config.inc;
+                const cosI = Math.cos(inc);
+                const factor = J2 * Math.pow(EARTH_RADIUS_KM / a, 2);
+                const raanRate = -1.5 * factor * n * cosI;
+                const argRate = 0.75 * factor * n * (5 * cosI * cosI - 1);
+                const meanCorrection = 0.75 * factor * n * (3 * cosI * cosI - 1);
+                const day = ((t / SOLAR_DAY) % YEAR_DAYS + YEAR_DAYS) % YEAR_DAYS;
+                const raan = config.kind === "sunSync" ? sunSyncRaanForDay(day) : config.raan0 + raanRate * t;
+                const u = sat.phase + (n + meanCorrection + argRate) * t;
+                return { a, inc, raan, u, raanRate, n };
+            }
+
+            function satellitePosition(radiusScene, inc, raan, u) {
+                const node = new THREE.Vector3(Math.cos(raan), 0, Math.sin(raan));
+                const q = new THREE.Vector3(
+                    Math.sin(raan) * Math.cos(inc),
+                    Math.sin(inc),
+                    -Math.cos(raan) * Math.cos(inc)
+                );
+                return node.multiplyScalar(Math.cos(u) * radiusScene).add(q.multiplyScalar(Math.sin(u) * radiusScene));
+            }
+
+            function sunSyncInclination(altKm) {
+                const a = EARTH_RADIUS_KM + altKm;
+                const n = Math.sqrt(MU / Math.pow(a, 3));
+                const factor = 1.5 * J2 * n * Math.pow(EARTH_RADIUS_KM / a, 2);
+                const cosI = THREE.MathUtils.clamp(-SUN_YEAR_RATE / factor, -1, 1);
+                return Math.acos(cosI);
+            }
+
+            function sunSyncRaanForDay(day) {
+                return sunRightAscensionForDay(day) - Math.PI / 2;
+            }
+
+            function orbitPointFromNormal(normal, u) {
+                const n = normal.clone().normalize();
+                const reference = Math.abs(n.y) < 0.92 ? NORTH_Y : new THREE.Vector3(1, 0, 0);
+                const xAxis = new THREE.Vector3().crossVectors(reference, n).normalize();
+                const yAxis = new THREE.Vector3().crossVectors(n, xAxis).normalize();
+                return xAxis.multiplyScalar(Math.cos(u)).add(yAxis.multiplyScalar(Math.sin(u)));
+            }
+
+            function sunDirectionForDay(day) {
+                const eclipticLongitude = TWO_PI * ((day - VERNAL_EQUINOX_DAY) / YEAR_DAYS);
+                return new THREE.Vector3(
+                    Math.cos(eclipticLongitude),
+                    Math.sin(OBLIQUITY) * Math.sin(eclipticLongitude),
+                    Math.cos(OBLIQUITY) * Math.sin(eclipticLongitude)
+                ).normalize();
+            }
+
+            function sunRightAscensionForDay(day) {
+                const sun = sunDirectionForDay(day);
+                return Math.atan2(sun.z, sun.x);
+            }
+
+            function displayFrameAngleForDay(day) {
+                return sunRightAscensionForDay(day);
+            }
+
+            function displaySunDirectionForDay(day) {
+                return sunDirectionForDay(day).applyAxisAngle(NORTH_Y, displayFrameAngleForDay(day)).normalize();
+            }
+
+            function earthRotationAngle(timeSec) {
+                const localHourAngle = TWO_PI * ((timeSec - 12 * 3600) / SOLAR_DAY);
+                return -ARIZONA.lon * DEG + localHourAngle;
+            }
+
+            function sceneTimeSeconds() {
+                return state.day * SOLAR_DAY + state.timeSec;
+            }
+
+            function advanceSimulation(simSeconds) {
+                let total = sceneTimeSeconds() + simSeconds;
+                total = ((total % YEAR_SECONDS) + YEAR_SECONDS) % YEAR_SECONDS;
+                state.day = Math.floor(total / SOLAR_DAY);
+                state.timeSec = total - state.day * SOLAR_DAY;
+                syncTimelineControls();
+            }
+
+            function orientZTo(group, direction) {
+                const dir = direction.clone().normalize();
+                if (dir.lengthSq() < 1e-8) return;
+                group.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(UP_Z, dir));
+            }
+
+            function fixedPanelNormalRoot(panel) {
+                const annualTilt = Math.abs(panel.userData.lat) * DEG;
+                return new THREE.Vector3(0, -Math.sin(annualTilt), Math.cos(annualTilt));
+            }
+
+            function panelBaseNormalRoot(id, panel) {
+                if (id === "fixedPanel" || id === "singleAxisTiltedPanel") return fixedPanelNormalRoot(panel);
+                return UP_Z.clone();
+            }
+
+            function singleAxisHingeRoot(id, panel) {
+                if (id === "singleAxisTiltedPanel") {
+                    const baseNormal = fixedPanelNormalRoot(panel);
+                    const north = new THREE.Vector3(0, 1, 0);
+                    return north.sub(baseNormal.clone().multiplyScalar(north.dot(baseNormal))).normalize();
+                }
+                return new THREE.Vector3(0, 1, 0);
+            }
+
+            function singleAxisNormalRoot(id, panel, sunRoot) {
+                const hinge = singleAxisHingeRoot(id, panel);
+                const baseNormal = panelBaseNormalRoot(id, panel);
+                const projected = sunRoot.clone().sub(hinge.clone().multiplyScalar(sunRoot.dot(hinge)));
+                if (projected.lengthSq() < 1e-6) return baseNormal;
+                return projected.normalize();
+            }
+
+            function signedAngleAroundAxis(from, to, axis) {
+                const hinge = axis.clone().normalize();
+                const a = from.clone().sub(hinge.clone().multiplyScalar(from.dot(hinge)));
+                const b = to.clone().sub(hinge.clone().multiplyScalar(to.dot(hinge)));
+                if (a.lengthSq() < 1e-6 || b.lengthSq() < 1e-6) return 0;
+                a.normalize();
+                b.normalize();
+                return Math.atan2(hinge.dot(new THREE.Vector3().crossVectors(a, b)), a.dot(b));
+            }
+
+            function clampRotationFromBase(baseNormal, targetNormal, axis, maxAngle) {
+                const angle = signedAngleAroundAxis(baseNormal, targetNormal, axis);
+                const clamped = THREE.MathUtils.clamp(angle, -maxAngle, maxAngle);
+                return baseNormal.clone().applyAxisAngle(axis.clone().normalize(), clamped).normalize();
+            }
+
+            function twoAxisConstrainedNormalRoot(sunRoot) {
+                const target = sunRoot.clone().normalize();
+                const angle = Math.acos(THREE.MathUtils.clamp(UP_Z.dot(target), -1, 1));
+                if (angle <= TRACKER_MAX_ROTATION) return target;
+                const axis = new THREE.Vector3().crossVectors(UP_Z, target);
+                if (axis.lengthSq() < 1e-6) return UP_Z.clone();
+                return UP_Z.clone().applyAxisAngle(axis.normalize(), TRACKER_MAX_ROTATION).normalize();
+            }
+
+            function singleAxisConstrainedNormalRoot(id, panel, sunRoot) {
+                const baseNormal = panelBaseNormalRoot(id, panel);
+                const hinge = singleAxisHingeRoot(id, panel);
+                const target = singleAxisNormalRoot(id, panel, sunRoot);
+                return clampRotationFromBase(baseNormal, target, hinge, TRACKER_MAX_ROTATION);
+            }
+
+            function panelNormalRootForSun(id, panel, sunRoot, horizon) {
+                if (id === "trackingPanel") return horizon > 0.02 ? twoAxisConstrainedNormalRoot(sunRoot) : UP_Z.clone();
+                if (id === "singleAxisFlatPanel" || id === "singleAxisTiltedPanel") {
+                    return horizon > 0.02 ? singleAxisConstrainedNormalRoot(id, panel, sunRoot) : panelBaseNormalRoot(id, panel);
+                }
+                return panelBaseNormalRoot(id, panel);
+            }
+
+            function orientPanelPivot(id, panel, normal) {
+                if (id === "singleAxisFlatPanel" || id === "singleAxisTiltedPanel") {
+                    panel.userData.pivot.quaternion.copy(quaternionFromNormalAndYAxis(normal, singleAxisHingeRoot(id, panel)));
+                    return;
+                }
+                panel.userData.pivot.quaternion.copy(quaternionFromNormalAndXAxis(normal, new THREE.Vector3(1, 0, 0)));
+            }
+
+            function updateSolarPanels(sunDir) {
+                const inverseEarth = earthGroup.quaternion.clone().invert();
+                const sunLocal = sunDir.clone().applyQuaternion(inverseEarth).normalize();
+                for (const [id, panel] of Object.entries(panelMeshes)) {
+                    panel.visible = state.objects[id];
+                    if (!panel.visible) continue;
+                    const horizon = sunLocal.dot(panel.userData.surfaceNormal);
+                    const sunRoot = sunLocal.clone().applyQuaternion(panel.quaternion.clone().invert()).normalize();
+                    const normal = panelNormalRootForSun(id, panel, sunRoot, horizon);
+                    orientPanelPivot(id, panel, normal);
+                }
+            }
+
+            function updateSatellites(sunDir, t, frameAngle) {
+                const physicalSunDir = sunDirectionForDay(t / SOLAR_DAY);
+                for (const id of Object.keys(state.satellites)) {
+                    const visible = state.objects[id];
+                    const satMesh = satelliteMeshes[id];
+                    satMesh.root.visible = visible;
+                    satMesh.orbitLine.visible = visible;
+                    if (!visible) continue;
+
+                    const el = orbitalElements(id, t);
+                    const radiusScene = el.a * KM_TO_SCENE;
+                    const physicalPosition = satellitePosition(el.a, el.inc, el.raan, el.u);
+                    const position = physicalPosition.clone().multiplyScalar(KM_TO_SCENE).applyAxisAngle(NORTH_Y, frameAngle);
+                    satMesh.root.position.copy(position);
+                    setSatelliteEclipseVisual(satMesh, isSatelliteEclipsed(physicalPosition, physicalSunDir));
+
+                    const mode = state.satellites[id].mode;
+                    if (mode === "sun") orientZTo(satMesh.root, sunDir);
+                    else orientZTo(satMesh.root, position.clone().normalize());
+
+                    updateOrbitTrace(satMesh, el, radiusScene, frameAngle);
+                }
+            }
+
+            function setSatelliteEclipseVisual(satMesh, eclipsed) {
+                if (satMesh.eclipsed === eclipsed) return;
+                satMesh.eclipsed = eclipsed;
+                satMesh.bodyMaterial.color.setHex(eclipsed ? 0x626a76 : 0xd7dde4);
+                satMesh.bodyMaterial.emissive.setHex(eclipsed ? 0x24070b : 0x11151d);
+                satMesh.apertureMaterial.color.setHex(eclipsed ? 0x7a3840 : satMesh.accent);
+                satMesh.apertureMaterial.emissive.setHex(eclipsed ? 0x2a070b : satMesh.accent);
+                satMesh.apertureMaterial.emissiveIntensity = eclipsed ? 0.045 : 0.2;
+                satMesh.wingMaterial.color.setHex(eclipsed ? 0x07152a : 0x174d8f);
+                satMesh.wingMaterial.emissive.setHex(eclipsed ? 0x02060d : 0x082548);
+                satMesh.outlineMaterial.opacity = eclipsed ? 0.12 : 0.28;
+            }
+
+            function updateOrbitTrace(satMesh, el, radiusScene, frameAngle) {
+                const attr = satMesh.orbitLine.geometry.attributes.position;
+                const arr = attr.array;
+                for (let i = 0; i < satMesh.orbitPoints; i++) {
+                    const u = i / satMesh.orbitPoints * TWO_PI;
+                    const p = satellitePosition(radiusScene, el.inc, el.raan, u).applyAxisAngle(NORTH_Y, frameAngle);
+                    arr[i * 3] = p.x;
+                    arr[i * 3 + 1] = p.y;
+                    arr[i * 3 + 2] = p.z;
+                }
+                attr.needsUpdate = true;
+                satMesh.orbitLine.geometry.computeBoundingSphere();
+            }
+
+            function updateLighting(sunDir) {
+                sunGroup.position.copy(sunDir).multiplyScalar(SUN_DISTANCE);
+                sunLight.position.copy(sunDir).multiplyScalar(SUN_DISTANCE);
+                sunLight.target.position.set(0, 0, 0);
+                sunLight.target.updateMatrixWorld();
+
+                const sunRayAttr = sunRayLine.geometry.attributes.position;
+                const start = sunDir.clone().multiplyScalar(EARTH_SCENE_RADIUS * 1.22);
+                const end = sunDir.clone().multiplyScalar(EARTH_SCENE_RADIUS * 2.2);
+                sunRayAttr.setXYZ(0, start.x, start.y, start.z);
+                sunRayAttr.setXYZ(1, end.x, end.y, end.z);
+                sunRayAttr.needsUpdate = true;
+            }
+
+            function updateWeatherVisuals() {
+                const w = THREE.MathUtils.clamp(state.weather / 100, 0, 1);
+                const stormLinear = THREE.MathUtils.clamp((w - 0.42) / 0.58, 0, 1);
+                const storm = stormLinear * stormLinear * (3 - 2 * stormLinear);
+                const weatherTime = sceneTimeSeconds();
+                const weatherDays = weatherTime / SOLAR_DAY;
+                const flashSignal = Math.sin(weatherTime * 0.008 + Math.sin(weatherTime * 0.0017) * 3);
+                const flash = storm > 0.72 ? Math.pow(Math.max(0, flashSignal), 18) * storm : 0;
+
+                cloudMaterial.opacity = w > 0.01 ? 0.06 + 0.56 * w : 0;
+                stormMaterial.opacity = 0.18 * storm + 0.58 * storm * storm;
+                rainMaterial.opacity = 0.48 * storm * storm;
+                lightningMaterial.opacity = 0.08 * storm + 0.72 * flash;
+
+                cloudMaterial.color.setHSL(0.58, 0.18 * (1 - w), 1 - 0.24 * w);
+                stormMaterial.color.setHSL(0.61, 0.12, 0.30 + 0.18 * flash);
+                rainMaterial.color.setHSL(0.58, 0.20, 0.48 + 0.20 * flash);
+                atmosphere.material.opacity = 0.09 + 0.09 * storm;
+                atmosphere.material.color.setHSL(0.57, 0.72 - 0.28 * storm, 0.58 - 0.18 * storm);
+                earthMaterial.color.setHSL(0.56, 0.10 * (1 - storm), 0.87 - 0.28 * storm);
+
+                cloudShell.visible = w > 0.01;
+                stormShell.visible = w > 0.45;
+                rainShell.visible = w > 0.58;
+                lightningShell.visible = w > 0.72;
+                cloudShell.rotation.y = weatherDays * TWO_PI * (0.09 + 0.07 * w);
+                stormShell.rotation.y = weatherDays * TWO_PI * (0.18 + 0.12 * storm);
+                rainShell.rotation.y = weatherDays * TWO_PI * (0.30 + 0.18 * storm);
+                lightningShell.rotation.y = stormShell.rotation.y * 0.82 + 0.4;
+                rainTexture.offset.y = -((weatherDays * (2.4 + 4.8 * storm)) % 1);
+            }
+
+            function updateReadouts(sunDir) {
+                const dateText = formatDay(state.day);
+                const timeText = formatTime(state.timeSec);
+                const sunDec = Math.asin(sunDir.y) / DEG;
+
+                const sunLocal = sunDir.clone().applyQuaternion(earthGroup.quaternion.clone().invert()).normalize();
+                const azNormal = latLonToLocal(ARIZONA.lat, ARIZONA.lon, 1).normalize();
+                const azElev = Math.asin(THREE.MathUtils.clamp(sunLocal.dot(azNormal), -1, 1)) / DEG;
+
+                elements.metricDate.textContent = dateText;
+                elements.metricTime.textContent = timeText;
+                elements.metricSun.textContent = `${sunDec.toFixed(1)} deg`;
+                elements.metricAz.textContent = `${azElev.toFixed(1)} deg`;
+                elements.playState.textContent = state.energyAnimate
+                    ? `Energy ${state.rate.toFixed(1)} min/s`
+                    : state.playing ? `Playing ${state.rate.toFixed(1)} min/s` : "Paused";
+                elements.playBtn.classList.toggle("active", state.playing);
+                elements.pauseBtn.classList.toggle("active", !state.playing);
+
+                const sunInc = sunSyncInclination(state.satellites.sunSync.alt) / DEG;
+                elements.sunSyncInc.textContent = `${sunInc.toFixed(2)} deg`;
+
+                for (const id of Object.keys(state.satellites)) {
+                    const el = orbitalElements(id, sceneTimeSeconds());
+                    const drift = el.raanRate * SOLAR_DAY / DEG;
+                    const periodMin = TWO_PI / el.n / 60;
+                    const noteEl = id === "sunSync" ? elements.sunSyncNote : id === "polar" ? elements.polarNote : elements.inclined55Note;
+                    noteEl.textContent = `${periodMin.toFixed(1)} min orbit, RAAN ${drift.toFixed(3)} deg/day`;
+                }
+            }
+
+            function formatDay(day) {
+                let remaining = Math.floor(day);
+                for (const [name, days] of months) {
+                    if (remaining < days) {
+                        const season = seasons.find((item) => item.day === Math.floor(day));
+                        return season ? `${season.emoji} ${name} ${remaining + 1} - ${season.full}` : `${name} ${remaining + 1}`;
+                    }
+                    remaining -= days;
+                }
+                return "Dec 31";
+            }
+
+            function formatTime(sec) {
+                const s = Math.floor(((sec % SOLAR_DAY) + SOLAR_DAY) % SOLAR_DAY);
+                const h = Math.floor(s / 3600);
+                const m = Math.floor((s % 3600) / 60);
+                const ss = s % 60;
+                return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+            }
+
+            function parseTime(value) {
+                const match = /^\s*(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?\s*$/.exec(value);
+                if (!match) return null;
+                const h = Number(match[1]);
+                const m = Number(match[2] || 0);
+                const s = Number(match[3] || 0);
+                if (h > 23 || m > 59 || s > 59) return null;
+                return h * 3600 + m * 60 + s;
+            }
+
+            function syncTimelineControls() {
+                elements.dateSlider.value = Math.floor(state.day);
+                elements.timeSlider.value = Math.floor(state.timeSec);
+                elements.dateLabel.textContent = formatDay(state.day).replace(" - ", " ");
+                elements.timeInput.value = formatTime(state.timeSec);
+            }
+
+            function syncRateControls() {
+                elements.rateSlider.value = state.rate;
+                elements.rateInput.value = state.rate.toFixed(1);
+            }
+
+            function syncWeatherControls() {
+                elements.weatherSlider.value = state.weather;
+                elements.weatherInput.value = state.weather;
+            }
+
+            function drawSeasonInset(sunDir) {
+                const canvas = elements.seasonCanvas;
+                const rect = canvas.getBoundingClientRect();
+                const width = Math.max(1, rect.width);
+                const height = Math.max(1, rect.height);
+                seasonInset.renderer.setSize(width, height, false);
+                seasonInset.camera.aspect = width / height;
+                seasonInset.camera.updateProjectionMatrix();
+
+                const eclipticSun = eclipticSunDirectionForDay(state.day);
+                const earthPosition = eclipticSun.clone().multiplyScalar(-seasonInset.orbitRadius);
+                seasonInset.earthGroup.position.copy(earthPosition);
+
+                setDynamicLinePoint(seasonInset.earthSunLine, 0, new THREE.Vector3(0, 0, 0));
+                setDynamicLinePoint(seasonInset.earthSunLine, 1, earthPosition);
+                seasonInset.earthSunLine.geometry.computeBoundingSphere();
+
+                const earthAngle = Math.atan2(earthPosition.z, earthPosition.x);
+                const highlightAttr = seasonInset.highlightLine.geometry.attributes.position;
+                for (let i = 0; i < seasonInset.highlightLine.userData.pointCount; i++) {
+                    const t = i / (seasonInset.highlightLine.userData.pointCount - 1);
+                    const a = earthAngle - 0.24 + 0.48 * t;
+                    highlightAttr.setXYZ(
+                        i,
+                        Math.cos(a) * seasonInset.orbitRadius,
+                        0.012,
+                        Math.sin(a) * seasonInset.orbitRadius
+                    );
+                }
+                highlightAttr.needsUpdate = true;
+                seasonInset.highlightLine.geometry.computeBoundingSphere();
+
+                const sceneTime = sceneTimeSeconds();
+                for (const id of ["sunSync", "polar", "inclined55"]) {
+                    const item = seasonInset.satelliteLines[id];
+                    const visible = state.objects[id];
+                    item.line.visible = visible;
+                    item.marker.visible = visible;
+                    if (!visible) continue;
+
+                    const el = orbitalElements(id, sceneTime);
+                    const shellRadius = 0.78 + (state.satellites[id].alt - 300) / 1700 * 0.28;
+                    const attr = item.line.geometry.attributes.position;
+                    for (let i = 0; i < item.pointCount; i++) {
+                        const u = i / (item.pointCount - 1) * TWO_PI;
+                        const local = equatorialToEcliptic(satellitePosition(shellRadius, el.inc, el.raan, u));
+                        const point = earthPosition.clone().add(local);
+                        attr.setXYZ(i, point.x, point.y, point.z);
+                    }
+                    attr.needsUpdate = true;
+                    item.line.geometry.computeBoundingSphere();
+                    if (item.line.material.isLineDashedMaterial) item.line.computeLineDistances();
+
+                    const current = earthPosition.clone().add(equatorialToEcliptic(
+                        satellitePosition(shellRadius, el.inc, el.raan, el.u)
+                    ));
+                    item.marker.position.copy(current);
+                }
+
+                const dec = Math.asin(sunDir.y) / DEG;
+                elements.seasonInfo.textContent = `${formatDay(state.day)} · Sun declination ${dec.toFixed(1)} deg`;
+
+                seasonInset.controls.update();
+                seasonInset.renderer.render(seasonInset.scene, seasonInset.camera);
+            }
+
+            function selectedEnergyObjects() {
+                const objects = [
+                    { id: "fixedPanel", label: "Fixed Arizona Panel", type: "panel" },
+                    { id: "singleAxisFlatPanel", label: "Single-Axis Flat Panel", type: "panel" },
+                    { id: "singleAxisTiltedPanel", label: "Single-Axis Tilted Panel", type: "panel" },
+                    { id: "trackingPanel", label: "Two-Axis Tracking Panel", type: "panel" },
+                    { id: "sunSync", label: "Sun-Sync Satellite", type: "satellite" },
+                    { id: "polar", label: "Polar Satellite", type: "satellite" },
+                    { id: "inclined55", label: "30 deg Satellite", type: "satellite" }
+                ];
+                return objects.filter((object) => state.objects[object.id]);
+            }
+
+            function energyAnalysisKey() {
+                return JSON.stringify({
+                    day: Math.floor(state.day),
+                    weather: state.weather,
+                    objects: state.objects,
+                    satellites: {
+                        sunSync: state.satellites.sunSync,
+                        polar: state.satellites.polar,
+                        inclined55: state.satellites.inclined55
+                    }
+                });
+            }
+
+            function formatElapsedTime(sec) {
+                if (sec >= SOLAR_DAY - 0.5) return "24:00:00";
+                return formatTime(sec);
+            }
+
+            function displayEnergy(wh, perDay = true) {
+                const suffix = perDay ? "/day" : "";
+                if (wh >= 1000) return `${(wh / 1000).toFixed(2)} kWh/m\u00b2${suffix}`;
+                return `${wh.toFixed(0)} Wh/m\u00b2${suffix}`;
+            }
+
+            function displayPower(watts) {
+                if (watts >= 100) return `${watts.toFixed(0)} W/m\u00b2 avg`;
+                if (watts >= 10) return `${watts.toFixed(1)} W/m\u00b2 avg`;
+                return `${watts.toFixed(2)} W/m\u00b2 avg`;
+            }
+
+            function batteryColor(fill) {
+                const hue = THREE.MathUtils.clamp(fill, 0, 1) * 120;
+                return `hsl(${hue.toFixed(0)} 78% 52%)`;
+            }
+
+            function weatherLabel() {
+                if (state.weather < 15) return "clear";
+                if (state.weather < 45) return "thin clouds";
+                if (state.weather < 75) return "cloudy";
+                return "storm";
+            }
+
+            function airMassFromHorizon(horizon) {
+                const clamped = THREE.MathUtils.clamp(horizon, 0.001, 1);
+                const zenithDeg = Math.acos(clamped) / DEG;
+                return 1 / (clamped + 0.50572 * Math.pow(96.07995 - zenithDeg, -1.6364));
+            }
+
+            function atmosphericPanelFactors(horizon) {
+                if (horizon <= 0) {
+                    return { airMass: 0, slantKm: 0, dryTrans: 0, weatherTrans: 0, transmittance: 0 };
+                }
+                const airMass = airMassFromHorizon(horizon);
+                const dryOpticalDepth = 0.055;
+                const weatherFraction = THREE.MathUtils.clamp(state.weather / 100, 0, 1);
+                const cloudOpticalDepth = 0.02 * weatherFraction + 3.8 * weatherFraction * weatherFraction;
+                const dryTrans = Math.exp(-dryOpticalDepth * airMass);
+                const weatherTrans = Math.exp(-cloudOpticalDepth * airMass);
+                return {
+                    airMass,
+                    slantKm: 8.5 * airMass,
+                    dryTrans,
+                    weatherTrans,
+                    transmittance: dryTrans * weatherTrans
+                };
+            }
+
+            function sunLocalForSample(day, timeSec) {
+                const sunDir = displaySunDirectionForDay(day);
+                const earthQ = new THREE.Quaternion().setFromAxisAngle(NORTH_Y, earthRotationAngle(timeSec));
+                return {
+                    sunDir,
+                    sunLocal: sunDir.clone().applyQuaternion(earthQ.clone().invert()).normalize()
+                };
+            }
+
+            function panelIncidenceForSample(id, day, timeSec) {
+                const panel = panelMeshes[id];
+                const sample = sunLocalForSample(day, timeSec);
+                const horizon = sample.sunLocal.dot(panel.userData.surfaceNormal);
+                if (horizon <= 0) return { incidence: 0, access: 0, transmittance: 0, slantKm: 0 };
+                const atmosphere = atmosphericPanelFactors(horizon);
+                const sunRoot = sample.sunLocal.clone().applyQuaternion(panel.quaternion.clone().invert()).normalize();
+                const normal = panelNormalRootForSun(id, panel, sunRoot, horizon);
+                return { incidence: Math.max(0, sunRoot.dot(normal)), access: 1, transmittance: atmosphere.transmittance, slantKm: atmosphere.slantKm };
+            }
+
+            function isSatelliteEclipsed(positionKm, sunDir) {
+                const alongSun = positionKm.dot(sunDir);
+                if (alongSun >= 0) return false;
+                const closest = positionKm.clone().sub(sunDir.clone().multiplyScalar(alongSun));
+                return closest.length() < EARTH_RADIUS_KM;
+            }
+
+            function satelliteEnergyForSample(id, day, timeSec) {
+                const dayFrac = day + timeSec / SOLAR_DAY;
+                const t = dayFrac * SOLAR_DAY;
+                const sunDir = sunDirectionForDay(dayFrac);
+                const el = orbitalElements(id, t);
+                const positionKm = satellitePosition(el.a, el.inc, el.raan, el.u);
+                if (isSatelliteEclipsed(positionKm, sunDir)) return { incidence: 0, access: 0, eclipsed: true };
+                if (state.satellites[id].mode === "sun") return { incidence: 1, access: 1, eclipsed: false };
+                const centerFaceNormal = positionKm.clone().normalize();
+                return { incidence: Math.max(0, centerFaceNormal.dot(sunDir)), access: 1, eclipsed: false };
+            }
+
+            function zeroEnergyResult() {
+                return {
+                    wh: 0,
+                    fill: 0,
+                    access: 0,
+                    avgIncidenceWhenLit: 0,
+                    avgTransmittance: 0,
+                    avgSlantKm: 0
+                };
+            }
+
+            function computeEnergyThroughTime(object, endTimeSec = SOLAR_DAY) {
+                const clampedEnd = THREE.MathUtils.clamp(endTimeSec, 0, SOLAR_DAY);
+                if (clampedEnd <= 0) return zeroEnergyResult();
+                const samples = 288;
+                const steps = Math.max(1, Math.ceil(samples * clampedEnd / SOLAR_DAY));
+                const dtSeconds = clampedEnd / steps;
+                const dtHours = dtSeconds / 3600;
+                let wh = 0;
+                let accessSum = 0;
+                let incidenceSum = 0;
+                let transSum = 0;
+                let slantSum = 0;
+                for (let i = 0; i < steps; i++) {
+                    const sampleTime = (i + 0.5) * dtSeconds;
+                    const sample = object.type === "panel"
+                        ? panelIncidenceForSample(object.id, state.day, sampleTime)
+                        : satelliteEnergyForSample(object.id, state.day, sampleTime);
+                    const transmittance = object.type === "panel" ? sample.transmittance : 1;
+                    wh += SOLAR_INPUT_W_M2 * sample.access * sample.incidence * transmittance * dtHours;
+                    accessSum += sample.access;
+                    incidenceSum += sample.access * sample.incidence;
+                    transSum += sample.access * transmittance;
+                    slantSum += sample.access * (sample.slantKm || 0);
+                }
+                const access = accessSum / steps;
+                const avgIncidenceWhenLit = accessSum > 0 ? incidenceSum / accessSum : 0;
+                return {
+                    wh,
+                    fill: THREE.MathUtils.clamp(wh / DAILY_FULL_WH_M2, 0, 1),
+                    access,
+                    avgIncidenceWhenLit,
+                    avgTransmittance: accessSum > 0 ? transSum / accessSum : 0,
+                    avgSlantKm: accessSum > 0 ? slantSum / accessSum : 0
+                };
+            }
+
+            function setEnergyAnimation(active, restart = false) {
+                state.energyAnimate = active;
+                if (restart) state.energyAnimTimeSec = 0;
+                if (active) {
+                    state.energyAnalysis = true;
+                    state.playing = false;
+                }
+                elements.energyAnalysisBtn.classList.toggle("active", state.energyAnalysis);
+            }
+
+            function updateEnergyAnimation(frameDt) {
+                if (!state.energyAnimate) return;
+                state.energyAnimTimeSec = Math.min(SOLAR_DAY, state.energyAnimTimeSec + frameDt * state.rate * 60);
+                state.timeSec = Math.min(state.energyAnimTimeSec, SOLAR_DAY - 1);
+                syncTimelineControls();
+                if (state.energyAnimTimeSec >= SOLAR_DAY) state.energyAnimate = false;
+            }
+
+            function satelliteModeLabel(id) {
+                return state.satellites[id].mode === "sun" ? "sun-track" : "center face";
+            }
+
+            function updateEnergyRow(row, result, endTimeSec) {
+                const isFullDay = endTimeSec >= SOLAR_DAY - 0.5;
+                const avgPower = endTimeSec > 0 ? result.wh / (endTimeSec / 3600) : 0;
+                row.energyValue.textContent = displayEnergy(result.wh, isFullDay);
+                row.powerValue.textContent = displayPower(avgPower);
+                row.fill.style.width = `${(result.fill * 100).toFixed(1)}%`;
+                row.fill.style.background = batteryColor(result.fill);
+
+                const modeText = row.object.type === "satellite"
+                    ? satelliteModeLabel(row.object.id)
+                    : row.object.id === "trackingPanel" ? "two-axis track, 45° cap"
+                        : row.object.id === "singleAxisFlatPanel" ? "single-axis flat, ±45°"
+                            : row.object.id === "singleAxisTiltedPanel" ? "single-axis tilted, ±45°"
+                                : "fixed annual tilt";
+                const atmosphereText = row.object.type === "panel"
+                    ? ` \u00b7 atm ${(result.avgTransmittance * 100).toFixed(0)}% \u00b7 slant ${result.avgSlantKm.toFixed(1)} km \u00b7 ${weatherLabel()}`
+                    : "";
+                const progressText = isFullDay ? "full day" : `through ${formatElapsedTime(endTimeSec)}`;
+                row.note.textContent = `${(result.fill * 100).toFixed(1)}% full \u00b7 ${progressText} \u00b7 sun access ${(result.access * 100).toFixed(0)}% \u00b7 avg incidence ${(result.avgIncidenceWhenLit * 100).toFixed(0)}%${atmosphereText} \u00b7 ${modeText}`;
+            }
+
+            function updateEnergyAnalysis() {
+                elements.energyPanel.hidden = !state.energyAnalysis;
+                if (!state.energyAnalysis) return;
+
+                const objects = selectedEnergyObjects();
+                const endTimeSec = state.energyAnimate || state.energyAnimTimeSec < SOLAR_DAY
+                    ? state.energyAnimTimeSec
+                    : SOLAR_DAY;
+                const isFullDay = endTimeSec >= SOLAR_DAY - 0.5;
+                elements.energyAnimateBtn.classList.toggle("active", state.energyAnimate);
+                elements.energyAnimateBtn.textContent = state.energyAnimate
+                    ? "Pause Day"
+                    : state.energyAnimTimeSec >= SOLAR_DAY ? "Animate Day" : "Resume Day";
+                elements.energyDateLabel.textContent = isFullDay
+                    ? `${formatDay(state.day)} \u00b7 full local solar day`
+                    : `${formatDay(state.day)} \u00b7 ${formatElapsedTime(endTimeSec)} / 24:00:00`;
+                if (!objects.length) {
+                    elements.energyRows.innerHTML = `<div class="energy-note">Select at least one object to analyze daily energy.</div>`;
+                    updateEnergyAnalysis.rows = [];
+                    return;
+                }
+
+                const key = energyAnalysisKey();
+                if (updateEnergyAnalysis.lastKey !== key) {
+                    updateEnergyAnalysis.lastKey = key;
+                    elements.energyRows.innerHTML = "";
+                    updateEnergyAnalysis.rows = objects.map((object) => {
+                        const row = document.createElement("div");
+                        row.className = "energy-row";
+                        row.dataset.object = object.id;
+
+                        const canvas = document.createElement("canvas");
+                        canvas.className = "energy-thumb";
+                        canvas.width = 96;
+                        canvas.height = 60;
+                        row.appendChild(canvas);
+
+                        const main = document.createElement("div");
+                        main.className = "energy-main";
+                        main.innerHTML = `
+                            <div class="energy-name">
+                                <span class="energy-label">${object.label}</span>
+                                <span class="energy-values">
+                                    <span class="energy-power">0 W/m\u00b2 avg</span>
+                                    <span class="energy-total">0 Wh/m\u00b2</span>
+                                </span>
+                            </div>
+                            <div class="battery"><div class="battery-fill"></div></div>
+                            <div class="energy-note"></div>
+                        `;
+                        row.appendChild(main);
+                        elements.energyRows.appendChild(row);
+
+                        return {
+                            object,
+                            canvas,
+                            energyValue: row.querySelector(".energy-total"),
+                            powerValue: row.querySelector(".energy-power"),
+                            fill: row.querySelector(".battery-fill"),
+                            note: row.querySelector(".energy-note")
+                        };
+                    });
+                }
+
+                for (const row of updateEnergyAnalysis.rows || []) {
+                    const result = computeEnergyThroughTime(row.object, endTimeSec);
+                    updateEnergyRow(row, result, endTimeSec);
+                    drawEnergyThumbnail(row.canvas, row.object);
+                }
+            }
+
+            function setupCanvas2D(canvas) {
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const rect = canvas.getBoundingClientRect();
+                const width = Math.max(1, Math.round(rect.width * dpr));
+                const height = Math.max(1, Math.round(rect.height * dpr));
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+                const ctx = canvas.getContext("2d");
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                return { ctx, w: rect.width, h: rect.height };
+            }
+
+            function drawEnergyThumbnail(canvas, object) {
+                const { ctx, w, h } = setupCanvas2D(canvas);
+                ctx.clearRect(0, 0, w, h);
+                ctx.fillStyle = "rgba(3, 6, 12, 0.92)";
+                ctx.fillRect(0, 0, w, h);
+                ctx.strokeStyle = "rgba(103, 143, 184, 0.22)";
+                ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+                if (object.type === "panel") drawPanelThumbnail(ctx, w, h, object.id);
+                else drawSatelliteThumbnail(ctx, w, h, object.id);
+            }
+
+            function drawArrow(ctx, x1, y1, x2, y2, color) {
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - 5 * Math.cos(angle - 0.55), y2 - 5 * Math.sin(angle - 0.55));
+                ctx.lineTo(x2 - 5 * Math.cos(angle + 0.55), y2 - 5 * Math.sin(angle + 0.55));
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            function drawPanelThumbnail(ctx, w, h, id) {
+                const panel = panelMeshes[id];
+                const sample = sunLocalForSample(state.day, state.timeSec);
+                const sunRoot = sample.sunLocal.clone().applyQuaternion(panel.quaternion.clone().invert()).normalize();
+                const horizon = sample.sunLocal.dot(panel.userData.surfaceNormal);
+                const normal = panelNormalRootForSun(id, panel, sunRoot, horizon);
+                const tangent = new THREE.Vector3(0, normal.z, -normal.y).normalize();
+                const cx = w * 0.48;
+                const cy = h * 0.68;
+                const scale = 24;
+                const p1 = { x: cx - tangent.y * scale, y: cy + tangent.z * scale };
+                const p2 = { x: cx + tangent.y * scale, y: cy - tangent.z * scale };
+
+                ctx.strokeStyle = "rgba(103, 143, 184, 0.45)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(10, cy + 12);
+                ctx.lineTo(w - 8, cy + 12);
+                ctx.stroke();
+
+                ctx.strokeStyle = "#45e4ff";
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                drawArrow(ctx, cx, cy, cx + normal.y * 20, cy - normal.z * 20, "#46e8a2");
+                drawArrow(ctx, w - 15, 12, w - 15 - sunRoot.y * 24, 12 + sunRoot.z * 24, horizon > 0 ? "#f2d64a" : "#6a5260");
+                ctx.fillStyle = horizon > 0 ? "#f2d64a" : "#7f95ad";
+                ctx.font = "8px Segoe UI, sans-serif";
+                const label = id === "trackingPanel" ? "2-axis"
+                    : id === "singleAxisFlatPanel" ? "1-axis flat"
+                        : id === "singleAxisTiltedPanel" ? "1-axis tilt"
+                            : "fixed";
+                ctx.fillText(horizon > 0 ? label : "night", 8, 12);
+            }
+
+            function satelliteThumbnailBasis() {
+                const forward = new THREE.Vector3(0.62, -0.16, 0.77).normalize();
+                const right = new THREE.Vector3().crossVectors(NORTH_Y, forward).normalize();
+                const up = new THREE.Vector3().crossVectors(forward, right).normalize();
+                return { forward, right, up };
+            }
+
+            function projectThumbnailVector(vector, origin, scale, basis) {
+                const depth = vector.dot(basis.forward);
+                const perspective = 1 / (1 + depth * 0.22);
+                return {
+                    x: origin.x + vector.dot(basis.right) * scale * perspective,
+                    y: origin.y - vector.dot(basis.up) * scale * perspective,
+                    depth
+                };
+            }
+
+            function strokeThumbnailSegments(ctx, points, predicate, color, width, dash = []) {
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.setLineDash(dash);
+                ctx.beginPath();
+                let drawing = false;
+                for (const point of points) {
+                    if (predicate(point)) {
+                        if (!drawing) ctx.moveTo(point.x, point.y);
+                        else ctx.lineTo(point.x, point.y);
+                        drawing = true;
+                    } else {
+                        drawing = false;
+                    }
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawSatelliteThumbnail(ctx, w, h, id) {
+                const t = sceneTimeSeconds();
+                const dayFrac = t / SOLAR_DAY;
+                const physicalSun = sunDirectionForDay(dayFrac);
+                const frameAngle = displayFrameAngleForDay(state.day);
+                const displaySun = displaySunDirectionForDay(state.day);
+                const el = orbitalElements(id, t);
+                const posKm = satellitePosition(el.a, el.inc, el.raan, el.u);
+                const eclipsed = isSatelliteEclipsed(posKm, physicalSun);
+                const basis = satelliteThumbnailBasis();
+                const origin = { x: w * 0.43, y: h * 0.53 };
+                const scale = Math.min(w, h) * 0.47;
+                const orbitPoints = [];
+                for (let i = 0; i <= 192; i++) {
+                    const u = i / 192 * TWO_PI;
+                    const p = satellitePosition(1, el.inc, el.raan, u).applyAxisAngle(NORTH_Y, frameAngle);
+                    orbitPoints.push(projectThumbnailVector(p, origin, scale, basis));
+                }
+
+                const pos = posKm.clone().normalize().applyAxisAngle(NORTH_Y, frameAngle);
+                const normal = state.satellites[id].mode === "sun" ? displaySun.clone() : pos.clone().normalize();
+                const satPoint = projectThumbnailVector(pos, origin, scale, basis);
+                const tangent = satellitePosition(1, el.inc, el.raan, el.u + 0.035)
+                    .applyAxisAngle(NORTH_Y, frameAngle)
+                    .sub(pos)
+                    .normalize();
+                const tangentAngle = Math.atan2(-tangent.dot(basis.up), tangent.dot(basis.right));
+                const normalTip = projectThumbnailVector(pos.clone().add(normal.clone().multiplyScalar(0.36)), origin, scale, basis);
+                const sunTip = projectThumbnailVector(displaySun.clone().multiplyScalar(0.85), { x: w - 17, y: 14 }, 23, basis);
+
+                const dash = id === "sunSync" ? [5, 4] : [];
+                strokeThumbnailSegments(ctx, orbitPoints, () => true, "rgba(242, 214, 74, 0.22)", 1.05, dash);
+                strokeThumbnailSegments(ctx, orbitPoints, (point) => point.depth < 0, "rgba(242, 214, 74, 0.34)", 1.05, dash);
+
+                ctx.fillStyle = "rgba(58, 143, 212, 0.38)";
+                ctx.beginPath();
+                ctx.arc(origin.x, origin.y, 12, 0, TWO_PI);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(117, 199, 255, 0.7)";
+                ctx.stroke();
+
+                strokeThumbnailSegments(ctx, orbitPoints, (point) => point.depth >= 0, "rgba(255, 232, 92, 0.86)", id === "sunSync" ? 1.9 : 1.55, dash);
+
+                ctx.save();
+                ctx.translate(satPoint.x, satPoint.y);
+                ctx.rotate(tangentAngle);
+                ctx.fillStyle = eclipsed ? "#ff6c73" : "#d7dde4";
+                ctx.fillRect(-5, -4, 10, 8);
+                ctx.fillStyle = "#174d8f";
+                ctx.fillRect(-17, -2, 11, 4);
+                ctx.fillRect(6, -2, 11, 4);
+                ctx.restore();
+
+                drawArrow(ctx, satPoint.x, satPoint.y, normalTip.x, normalTip.y, state.satellites[id].mode === "sun" ? "#f2d64a" : "#46e8a2");
+                drawArrow(ctx, w - 17, 14, sunTip.x, sunTip.y, "#f2d64a");
+                ctx.fillStyle = eclipsed ? "#ff6c73" : "#46e8a2";
+                ctx.font = "8px Segoe UI, sans-serif";
+                ctx.fillText(eclipsed ? "eclipse" : satelliteModeLabel(id), 7, h - 7);
+            }
+
+            function populateSeasonMarks() {
+                const holder = document.getElementById("season-marks");
+                holder.innerHTML = "";
+                for (const item of seasons) {
+                    const mark = document.createElement("span");
+                    mark.className = "season-mark";
+                    mark.style.left = `${item.day / 364 * 100}%`;
+                    mark.textContent = `${item.emoji} ${item.label}`;
+                    holder.appendChild(mark);
+                }
+            }
+
+            function bindControls() {
+                populateSeasonMarks();
+                syncTimelineControls();
+                syncRateControls();
+                syncWeatherControls();
+
+                document.querySelectorAll("button[data-object]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const key = button.dataset.object;
+                        state.objects[key] = !state.objects[key];
+                        button.classList.toggle("active", state.objects[key]);
+                        updateEnergyAnalysis.lastKey = "";
+                    });
+                });
+
+                elements.energyAnalysisBtn.addEventListener("click", () => {
+                    state.energyAnalysis = !state.energyAnalysis;
+                    if (!state.energyAnalysis) state.energyAnimate = false;
+                    else if (!state.energyAnimate) state.energyAnimTimeSec = SOLAR_DAY;
+                    elements.energyAnalysisBtn.classList.toggle("active", state.energyAnalysis);
+                    updateEnergyAnalysis.lastKey = "";
+                    updateEnergyAnalysis(0);
+                });
+
+                elements.energyAnimateBtn.addEventListener("click", () => {
+                    const shouldAnimate = !state.energyAnimate;
+                    const restart = shouldAnimate && state.energyAnimTimeSec >= SOLAR_DAY;
+                    setEnergyAnimation(shouldAnimate, restart);
+                    if (shouldAnimate) {
+                        state.timeSec = Math.min(state.energyAnimTimeSec, SOLAR_DAY - 1);
+                        syncTimelineControls();
+                    }
+                    updateEnergyAnalysis.lastKey = "";
+                    updateEnergyAnalysis(0);
+                });
+
+                elements.dateSlider.addEventListener("input", () => {
+                    state.day = Number(elements.dateSlider.value);
+                    state.energyAnimate = false;
+                    state.energyAnimTimeSec = SOLAR_DAY;
+                    syncTimelineControls();
+                    updateEnergyAnalysis.lastKey = "";
+                });
+
+                elements.timeSlider.addEventListener("input", () => {
+                    state.timeSec = Number(elements.timeSlider.value);
+                    state.energyAnimate = false;
+                    state.energyAnimTimeSec = SOLAR_DAY;
+                    syncTimelineControls();
+                });
+
+                elements.timeInput.addEventListener("change", () => {
+                    const parsed = parseTime(elements.timeInput.value);
+                    if (parsed == null) {
+                        elements.timeInput.value = formatTime(state.timeSec);
+                        return;
+                    }
+                    state.timeSec = parsed;
+                    state.energyAnimate = false;
+                    state.energyAnimTimeSec = SOLAR_DAY;
+                    syncTimelineControls();
+                });
+
+                const setWeather = (raw) => {
+                    state.weather = THREE.MathUtils.clamp(Number(raw) || 0, 0, 100);
+                    syncWeatherControls();
+                    updateEnergyAnalysis.lastKey = "";
+                };
+
+                elements.weatherSlider.addEventListener("input", () => setWeather(elements.weatherSlider.value));
+                elements.weatherInput.addEventListener("change", () => setWeather(elements.weatherInput.value));
+
+                elements.playBtn.addEventListener("click", () => {
+                    state.energyAnimate = false;
+                    state.energyAnimTimeSec = SOLAR_DAY;
+                    state.playing = true;
+                });
+
+                elements.pauseBtn.addEventListener("click", () => {
+                    state.playing = false;
+                    state.energyAnimate = false;
+                });
+
+                elements.rateSlider.addEventListener("input", () => {
+                    state.rate = Number(elements.rateSlider.value);
+                    syncRateControls();
+                });
+
+                elements.rateInput.addEventListener("change", () => {
+                    const value = THREE.MathUtils.clamp(Number(elements.rateInput.value) || 30, 0.1, 180);
+                    state.rate = value;
+                    syncRateControls();
+                });
+
+                for (const id of Object.keys(state.satellites)) {
+                    const range = document.getElementById(`${id}-alt`);
+                    const number = document.getElementById(`${id}-alt-num`);
+                    const setAlt = (raw) => {
+                        const alt = THREE.MathUtils.clamp(Number(raw) || state.satellites[id].alt, 300, 2000);
+                        state.satellites[id].alt = alt;
+                        range.value = alt;
+                        number.value = alt;
+                        updateEnergyAnalysis.lastKey = "";
+                    };
+                    range.addEventListener("input", () => setAlt(range.value));
+                    number.addEventListener("change", () => setAlt(number.value));
+                }
+
+                document.querySelectorAll("[data-sat][data-mode]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const sat = button.dataset.sat;
+                        const mode = button.dataset.mode;
+                        state.satellites[sat].mode = mode;
+                        updateEnergyAnalysis.lastKey = "";
+                        document.querySelectorAll(`[data-sat="${sat}"][data-mode]`).forEach((peer) => {
+                            peer.classList.toggle("active", peer === button);
+                        });
+                    });
+                });
+            }
+
+            function resize() {
+                const railHeight = Math.ceil(elements.controlRail.getBoundingClientRect().height);
+                document.documentElement.style.setProperty("--rail-height", `${railHeight}px`);
+                const width = elements.view.clientWidth;
+                const height = elements.view.clientHeight;
+                renderer.setSize(width, height);
+                if (radiationBelts.material?.uniforms?.uScale) {
+                    radiationBelts.material.uniforms.uScale.value = Math.max(height, 1) * renderer.getPixelRatio() * 0.5;
+                }
+                camera.aspect = Math.max(width / Math.max(height, 1), 0.1);
+                camera.updateProjectionMatrix();
+                drawSeasonInset(displaySunDirectionForDay(state.day));
+            }
+
+            function renderFrame(frameDt = 0) {
+                updateEnergyAnimation(frameDt);
+                const frameAngle = displayFrameAngleForDay(state.day);
+                const sunDir = displaySunDirectionForDay(state.day);
+                const theta = earthRotationAngle(state.timeSec);
+                earthGroup.rotation.y = theta;
+                atmosphere.rotation.y = theta * 0.18;
+
+                updateLighting(sunDir);
+                updateWeatherVisuals();
+                updateRadiationBelts(frameDt, sunDir);
+                updateSolarPanels(sunDir);
+                updateSatellites(sunDir, sceneTimeSeconds(), frameAngle);
+                updateReadouts(sunDir);
+                drawSeasonInset(sunDir);
+                updateEnergyAnalysis();
+
+                controls.update();
+                renderer.render(scene, camera);
+            }
+
+            let lastFrame = performance.now();
+            function animate(now) {
+                try {
+                    requestAnimationFrame(animate);
+                    const dt = Math.min((now - lastFrame) / 1000, 0.08);
+                    lastFrame = now;
+                    if (state.playing) advanceSimulation(dt * state.rate * 60);
+                    renderFrame(dt);
+                } catch (error) {
+                    showError(error);
+                }
+            }
+
+            window.addEventListener("resize", resize);
+            bindControls();
+            resize();
+            renderFrame(0);
+            requestAnimationFrame(animate);
+        })();
+    </script>
+</body>
+
+</html>

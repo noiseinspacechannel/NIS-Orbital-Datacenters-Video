@@ -1,0 +1,3392 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbital Datacenter Thermal Model - Liquid Loop Repaired</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #151515;
+            --panel: rgba(7, 10, 14, 0.82);
+            --panel-2: rgba(14, 17, 20, 0.9);
+            --line: rgba(141, 166, 179, 0.24);
+            --line-strong: rgba(99, 192, 229, 0.46);
+            --text: #e4edf2;
+            --muted: #91a2ad;
+            --cyan: #5ed5f2;
+            --green: #4ce09b;
+            --gold: #e6c85a;
+            --copper: #d78145;
+            --red: #ff6d68;
+            --rail-height: 224px;
+            --hud-clearance: calc(var(--rail-height) + 16px);
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            letter-spacing: 0;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        #app {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 72% 16%, rgba(214, 129, 69, 0.08), transparent 28%),
+                radial-gradient(circle at 18% 78%, rgba(94, 213, 242, 0.07), transparent 32%),
+                #151515;
+        }
+
+        #view {
+            position: absolute;
+            inset: 0 0 var(--hud-clearance) 0;
+            overflow: hidden;
+        }
+
+        #scene-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #scene-canvas:active {
+            cursor: grabbing;
+        }
+
+        .hud-panel,
+        #control-rail,
+        #error-log {
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+
+        body.photo-mode .hud-panel,
+        body.photo-mode #control-rail,
+        body.photo-mode #error-log {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(8px);
+        }
+
+        body.photo-mode #scene-canvas,
+        body.photo-mode #scene-canvas:active {
+            cursor: none;
+        }
+
+        .hud-panel {
+            position: absolute;
+            z-index: 10;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+        }
+
+        #top-readout {
+            top: 16px;
+            left: 16px;
+            width: min(560px, calc(100vw - 32px));
+        }
+
+        .readout-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 11px 13px 9px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        h1 {
+            color: #f4f8fb;
+            font-size: 16px;
+            line-height: 1.15;
+            font-weight: 780;
+        }
+
+        .readout-head span {
+            color: var(--green);
+            font-size: 10px;
+            line-height: 1;
+            font-weight: 760;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        #metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1px;
+            background: rgba(141, 166, 179, 0.12);
+        }
+
+        .metric {
+            min-width: 0;
+            padding: 9px 10px;
+            background: rgba(10, 13, 17, 0.84);
+        }
+
+        .metric .label {
+            display: block;
+            margin-bottom: 4px;
+            color: #84949f;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 720;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .metric .value {
+            display: block;
+            color: #edf5f8;
+            font-size: 13px;
+            line-height: 1.15;
+            font-weight: 780;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #legend {
+            top: 16px;
+            right: 16px;
+            width: 112px;
+            height: 306px;
+            padding: 10px;
+        }
+
+        #legend.hidden {
+            display: none;
+        }
+
+        .legend-label {
+            color: #9eb4c0;
+            font-size: 10px;
+            font-weight: 820;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-align: center;
+            margin-bottom: 9px;
+        }
+
+        .legend-body {
+            display: grid;
+            grid-template-columns: 24px 1fr;
+            gap: 10px;
+            height: calc(100% - 30px);
+        }
+
+        .legend-ramp {
+            width: 24px;
+            height: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 6px;
+            background: linear-gradient(180deg, #7c0000 0%, #ff1e16 13%, #ff8d27 27%, #f6e85b 42%, #40dd88 58%, #23d7ef 73%, #1f62ff 88%, #07106f 100%);
+        }
+
+        .legend-ticks {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: #c9d5dc;
+            font-size: 10px;
+            line-height: 1;
+            font-weight: 760;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #environment {
+            right: 16px;
+            bottom: var(--hud-clearance);
+            width: min(390px, calc(100vw - 32px));
+        }
+
+        .env-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1px;
+            background: rgba(141, 166, 179, 0.12);
+        }
+
+        .env-item {
+            min-width: 0;
+            padding: 9px 10px;
+            background: rgba(10, 13, 17, 0.84);
+        }
+
+        .env-label {
+            display: block;
+            margin-bottom: 4px;
+            color: #84949f;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 720;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .env-value {
+            display: block;
+            color: #edf5f8;
+            font-size: 12px;
+            line-height: 1.15;
+            font-weight: 760;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #control-rail {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 20;
+            min-height: var(--rail-height);
+            padding: 14px 16px 16px;
+            background: linear-gradient(180deg, rgba(14, 15, 16, 0.90), rgba(6, 7, 8, 0.98));
+            border-top: 1px solid rgba(141, 166, 179, 0.24);
+            box-shadow: 0 -18px 46px rgba(0, 0, 0, 0.38);
+            display: grid;
+            grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.25fr) minmax(320px, 1fr) minmax(270px, 0.8fr);
+            gap: 12px;
+        }
+
+        .control-section {
+            min-width: 0;
+            background: rgba(12, 15, 18, 0.68);
+            border: 1px solid rgba(141, 166, 179, 0.17);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 9px;
+            color: #aebdc6;
+            font-size: 10px;
+            font-weight: 820;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .segmented,
+        .button-grid,
+        .playback-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .seg-btn,
+        .mini-btn,
+        .play-btn {
+            min-height: 32px;
+            border: 1px solid rgba(141, 166, 179, 0.24);
+            border-radius: 7px;
+            background: rgba(20, 24, 27, 0.95);
+            color: #dce8ed;
+            padding: 7px 10px;
+            cursor: pointer;
+            transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
+        }
+
+        .seg-btn:hover,
+        .mini-btn:hover,
+        .play-btn:hover {
+            border-color: var(--line-strong);
+            transform: translateY(-1px);
+        }
+
+        .seg-btn.active,
+        .mini-btn.active,
+        .play-btn.active {
+            background: rgba(58, 90, 91, 0.74);
+            border-color: rgba(94, 213, 242, 0.74);
+            color: #ffffff;
+            box-shadow: inset 0 0 18px rgba(94, 213, 242, 0.13);
+        }
+
+        .mass-btn.active {
+            background: rgba(127, 73, 40, 0.82);
+            border-color: rgba(215, 129, 69, 0.74);
+        }
+
+        .timeline-row {
+            display: grid;
+            grid-template-columns: 86px minmax(0, 1fr) 96px;
+            align-items: center;
+            gap: 9px;
+            margin-top: 9px;
+        }
+
+        .timeline-row label {
+            color: #94a4ad;
+            font-size: 10px;
+            font-weight: 760;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--cyan);
+        }
+
+        .value-pill {
+            min-height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 8px;
+            border: 1px solid rgba(141, 166, 179, 0.2);
+            border-radius: 7px;
+            background: rgba(4, 7, 9, 0.56);
+            color: #dce8ed;
+            font-size: 11px;
+            font-weight: 760;
+            white-space: nowrap;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px;
+        }
+
+        .summary-card {
+            min-width: 0;
+            border: 1px solid rgba(141, 166, 179, 0.17);
+            border-radius: 7px;
+            background: rgba(7, 9, 10, 0.42);
+            padding: 8px;
+        }
+
+        .summary-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #82949e;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 760;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .summary-value {
+            display: block;
+            color: #edf5f8;
+            font-size: 12px;
+            line-height: 1.22;
+            font-weight: 760;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #error-log {
+            position: absolute;
+            left: 16px;
+            right: 16px;
+            bottom: var(--hud-clearance);
+            z-index: 50;
+            display: none;
+            max-height: 30vh;
+            overflow: auto;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 109, 104, 0.55);
+            border-radius: 8px;
+            background: rgba(60, 13, 13, 0.88);
+            color: #ffd9d6;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 1180px) {
+            :root {
+                --rail-height: 360px;
+            }
+
+            #control-rail {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            :root {
+                --rail-height: 470px;
+            }
+
+            #control-rail {
+                grid-template-columns: 1fr;
+                overflow-y: auto;
+            }
+
+            #metrics,
+            .env-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #environment {
+                display: none;
+            }
+
+            #legend {
+                top: auto;
+                bottom: var(--hud-clearance);
+                height: 210px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div id="view">
+            <canvas id="scene-canvas"></canvas>
+        </div>
+
+        <div id="top-readout" class="hud-panel">
+            <div class="readout-head">
+                <h1>Orbital Datacenter · Liquid Loop DD-SSO</h1>
+                <span id="play-state">Running</span>
+            </div>
+            <div id="metrics">
+                <div class="metric"><span class="label">Sim Time</span><span class="value" id="metric-time">--</span></div>
+                <div class="metric"><span class="label">Chip Center</span><span class="value" id="metric-chip-center">--</span></div>
+                <div class="metric"><span class="label">Chip Edge</span><span class="value" id="metric-chip-edge">--</span></div>
+                <div class="metric"><span class="label">Heat Sink</span><span class="value" id="metric-sink">--</span></div>
+                <div class="metric"><span class="label">Bus</span><span class="value" id="metric-bus">--</span></div>
+                <div class="metric"><span class="label">Rad Near Bus</span><span class="value" id="metric-rad-near">--</span></div>
+                <div class="metric"><span class="label">Rad Center</span><span class="value" id="metric-rad-center">--</span></div>
+                <div class="metric"><span class="label">Rad Far</span><span class="value" id="metric-rad-far">--</span></div>
+                <div class="metric"><span class="label">PV Face</span><span class="value" id="metric-pv-face">--</span></div>
+                <div class="metric"><span class="label">Panel Back</span><span class="value" id="metric-panel-back">--</span></div>
+                <div class="metric"><span class="label">PV Electric</span><span class="value" id="metric-pv">--</span></div>
+                <div class="metric"><span class="label">Transport</span><span class="value" id="metric-sun">--</span></div>
+            </div>
+        </div>
+
+        <div id="legend" class="hud-panel hidden">
+            <div class="legend-label">Temp</div>
+            <div class="legend-body">
+                <div class="legend-ramp"></div>
+                <div class="legend-ticks">
+                    <span id="legend-tick-0">--</span>
+                    <span id="legend-tick-1">--</span>
+                    <span id="legend-tick-2">--</span>
+                    <span id="legend-tick-3">--</span>
+                    <span id="legend-tick-4">--</span>
+                    <span id="legend-tick-5">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="environment" class="hud-panel">
+            <div class="readout-head">
+                <h1>Dawn-Dusk Flux</h1>
+                <span>500 km SSO</span>
+            </div>
+            <div class="env-grid">
+                <div class="env-item"><span class="env-label">Direct Sun</span><span class="env-value" id="env-sun">--</span></div>
+                <div class="env-item"><span class="env-label">Earth IR</span><span class="env-value" id="env-ir">--</span></div>
+                <div class="env-item"><span class="env-label">Albedo</span><span class="env-value" id="env-albedo">--</span></div>
+                <div class="env-item"><span class="env-label">Panel Span</span><span class="env-value" id="env-span">--</span></div>
+                <div class="env-item"><span class="env-label">Chip Area</span><span class="env-value" id="env-chip-area">--</span></div>
+                <div class="env-item"><span class="env-label">Radiator</span><span class="env-value" id="env-rad-area">--</span></div>
+            </div>
+        </div>
+
+        <div id="control-rail">
+            <section class="control-section">
+                <div class="section-title">View</div>
+                <div class="segmented">
+                    <button class="seg-btn active" data-view="metal">Metal</button>
+                    <button class="seg-btn" data-view="thermal">Thermal</button>
+                </div>
+                <div class="timeline-row">
+                    <label for="scale-slider">Zoom</label>
+                    <input id="scale-slider" type="range" min="0" max="100" step="1" value="18">
+                    <div class="value-pill" id="scale-label">1.0x</div>
+                </div>
+            </section>
+
+            <section class="control-section">
+                <div class="section-title">Thermal System Mass</div>
+                <div class="button-grid">
+                    <button class="mini-btn mass-btn" data-mass="100">100 kg</button>
+                    <button class="mini-btn mass-btn" data-mass="250">250 kg</button>
+                    <button class="mini-btn mass-btn" data-mass="500">500 kg</button>
+                    <button class="mini-btn mass-btn" data-mass="1000">1000 kg</button>
+                    <button class="mini-btn mass-btn active" data-mass="1500">1500 kg</button>
+                    <button class="mini-btn mass-btn" data-mass="2000">2000 kg</button>
+                </div>
+                <div class="summary-grid" style="margin-top: 9px;">
+                    <div class="summary-card"><span class="summary-label">Top Thick</span><span class="summary-value" id="summary-thick-center">--</span></div>
+                    <div class="summary-card"><span class="summary-label">Edge Thick</span><span class="summary-value" id="summary-thick-edge">--</span></div>
+                    <div class="summary-card"><span class="summary-label">Sink Mass</span><span class="summary-value" id="summary-sink-mass">--</span></div>
+                    <div class="summary-card"><span class="summary-label">Rad Mass</span><span class="summary-value" id="summary-rad-mass">--</span></div>
+                    <div class="summary-card"><span class="summary-label">Transport Mass</span><span class="summary-value" id="summary-transport-mass">--</span></div>
+                    <div class="summary-card"><span class="summary-label">Drawn Face Size</span><span class="summary-value" id="summary-active-area">--</span></div>
+                </div>
+            </section>
+
+            <section class="control-section">
+                <div class="section-title">Playback</div>
+                <div class="playback-row">
+                    <button class="play-btn active" id="play-btn">Play</button>
+                    <button class="play-btn" id="pause-btn">Pause</button>
+                    <button class="mini-btn" id="reset-btn">Reset</button>
+                    <button class="mini-btn active" id="orbit-btn">Orbit</button>
+                </div>
+                <div class="timeline-row">
+                    <label for="speed-slider">Rate</label>
+                    <input id="speed-slider" type="range" min="0" max="5" step="1" value="3">
+                    <div class="value-pill" id="speed-label">1 hr/s</div>
+                </div>
+            </section>
+
+            <section class="control-section">
+                <div class="section-title">Surface Greybody</div>
+                <div class="summary-grid">
+                    <div class="summary-card"><span class="summary-label">PV Face</span><span class="summary-value">eps .84 eta .26, -0.32%/K</span></div>
+                    <div class="summary-card"><span class="summary-label">Solar Back</span><span class="summary-value">eps .86 alpha .18</span></div>
+                    <div class="summary-card"><span class="summary-label">Transport</span><span class="summary-value">single-phase liquid loop</span></div>
+                    <div class="summary-card"><span class="summary-label">Copper Radiator</span><span class="summary-value">eps .78 alpha .42</span></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="error-log"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        (() => {
+            "use strict";
+
+            const DEG = Math.PI / 180;
+            const TWO_PI = Math.PI * 2;
+            const SIGMA = 5.670374419e-8;
+            const K0 = 273.15;
+            const SPACE_TEMP_K = 3.0;
+            const EARTH_RADIUS_KM = 6378.137;
+            const ALTITUDE_KM = 500;
+            const MU = 398600.4418;
+            const J2 = 1.08262668e-3;
+            const SOLAR_DAY = 86400;
+            const SIDEREAL_DAY = 86164.0905;
+            const YEAR_DAYS = 365.2422;
+            const SUN_YEAR_RATE = TWO_PI / (YEAR_DAYS * SOLAR_DAY);
+            const OBLIQUITY = 23.43928 * DEG;
+            const VERNAL_EQUINOX_DAY = 79;
+            const FALL_EQUINOX_DAY = 265;
+            const EARTH_SCENE_RADIUS = EARTH_RADIUS_KM;
+            const KM_TO_SCENE = 1;
+            const METER_TO_SCENE_BASE = 0.001;
+            const SUN_DISTANCE = 24000;
+            const SOLAR_CONSTANT = 1361;
+            const EARTH_IR_W_M2 = 237;
+            const EARTH_ALBEDO = 0.30;
+            const DAWN_DUSK_SSO_CONSTANT_SUN = true;
+            const RADIATOR_DIRECT_SUN_EXPOSED = false;
+            const DAWN_DUSK_ALBEDO_PHASE_FACTOR = 0.32;
+            const THERMAL_TRANSPORT_MODE = "liquidCoolant";
+            const SUN_ANGULAR_RADIUS_RAD = 0.2666 * DEG;
+            const RADIATOR_AREAL_DENSITY_KG_M2 = 4.0;
+            const RADIATOR_MIN_ACTIVE_FACE_AREA_M2 = 2.0;
+            const FIXED_SOLVER_STEP_S = 4.0;
+            const MAX_FRAME_DT_S = 0.05;
+            const THERMAL_VIEW_MIN_K = K0 - 40;
+            const THERMAL_VIEW_MAX_K = K0 + 140;
+            const PASSIVE_HEAT_PIPE_MASS_KG = 24;
+            const HEAT_PUMP_DRY_MASS_KG = 72;
+            const COOLANT_DRY_LOOP_MASS_KG = 42;
+            const COOLANT_FLUID_MASS_KG = 24;
+            const HEAT_PIPE_RADIUS_M = 0.045;
+            const COOLANT_PIPE_RADIUS_M = 0.055;
+            const STARSHIP_V3_STACK_M = 124.4;
+            const SOLAR_ARRAY_SPAN_M = STARSHIP_V3_STACK_M * 1.5;
+            const SOLAR_ARRAY_WIDTH_M = 7.0;
+            const SOLAR_ARRAY_AREA_M2 = SOLAR_ARRAY_SPAN_M * SOLAR_ARRAY_WIDTH_M;
+            const RADIATOR_WIDTH_M = 10;
+            const RADIATOR_HEIGHT_M = 20;
+            const RADIATOR_FACE_AREA_M2 = RADIATOR_WIDTH_M * RADIATOR_HEIGHT_M;
+            const BUS_X_M = 7;
+            const BUS_Y_M = 4;
+            const BUS_Z_M = 0.55;
+            const BUS_VISUAL_ROTATION_Y = Math.PI / 2;
+            const COMPUTE_POWER_W = 100000;
+            const CHIP_COUNT = 100;
+            const CHIP_POWER_W = 1000;
+            const CHIP_CENTER_COUNT = 36;
+            const CHIP_EDGE_COUNT = CHIP_COUNT - CHIP_CENTER_COUNT;
+            const CHIP_SILICON_AREA_M2 = 2 * 814e-6;
+            const CHIP_SIDE_M = Math.sqrt(CHIP_SILICON_AREA_M2);
+            const CHIP_PACKAGE_VISUAL_SIDE_M = 0.085;
+            const CHIP_PACKAGE_THICKNESS_M = 0.014;
+            const PV_PACKING_FACTOR = 0.83;
+            const PV_POWER_CONDITIONING_EFF = 0.93;
+            const PV_EOL_FACTOR = 0.88;
+            const PV_REF_TEMP_K = K0 + 25;
+            const PV_REF_CELL_VOC_V = 0.72;
+            const PV_DIODE_IDEALITY = 1.25;
+            const PV_ISC_TEMP_COEFF_PER_K = 0.00045;
+            const PV_POWER_TEMP_COEFF_PER_K = -0.0032;
+            const PV_FACTOR_MIN = 0.08;
+            const PV_FACTOR_MAX = 1.12;
+            const BOLTZMANN_EV_PER_K = 8.617333262e-5;
+            const RADIATOR_EDGE_SOLAR_DEPTH_M = 0.18;
+            const COPPER_RHO = 8960;
+            const COPPER_CP = 385;
+            const ALUMINUM_RHO = 2700;
+            const ALUMINUM_CP = 900;
+            const BUS_ALUMINUM_MASS_KG = 100;
+            const CHIP_TO_SINK_G_CENTER_W_K = 22;
+            const CHIP_TO_SINK_G_EDGE_W_K = 28;
+            const COMPUTE_TO_BUS_PARASITIC_G_W_K = 6;
+            const SINK_TO_RADIATOR_LOOP_G_W_K = 3600;
+            const HEAT_PUMP_TARGET_SINK_K = K0 + 52;
+            const HEAT_PUMP_MIN_SINK_K = K0 + 18;
+            const HEAT_PUMP_CONTROL_UA_W_K = 8500;
+            const HEAT_PUMP_MAX_HEAT_W = 145000;
+            const HEAT_PUMP_CARNOT_FRACTION = 0.38;
+            const HEAT_PUMP_MIN_COP = 1.35;
+            const HEAT_PUMP_MAX_COP = 8.0;
+            const HEAT_PUMP_CONDENSER_APPROACH_K = 8;
+            const HEAT_PUMP_EVAPORATOR_APPROACH_K = 5;
+            const HEAT_PUMP_PASSIVE_G_FRACTION = 0.10;
+            const COOLANT_LOOP_MASS_KG = COOLANT_FLUID_MASS_KG;
+            const COOLANT_CP_J_KGK = 3600;
+            const COOLANT_FLOW_KG_S = 0.72;
+            const COOLANT_COLDPLATE_UA_W_K = 9200;
+            const COOLANT_RADIATOR_UA_W_K = 10500;
+            const COOLANT_MAX_HEAT_W = 155000;
+            const COOLANT_PUMP_POWER_W = 850;
+            const COOLANT_MIN_SINK_K = K0 + 12;
+            const SOLAR_PANEL_THROUGH_G_W_M2K = 5.0;
+            const SOLAR_PANEL_STRUT_G_TOTAL_W_K = 0.35;
+            const SURFACES = {
+                pv: { emissivity: 0.84, absorptivity: 0.90, efficiency: 0.26 },
+                solarBack: { emissivity: 0.86, absorptivity: 0.18 },
+                busAluminum: { emissivity: 0.82, absorptivity: 0.22 },
+                radiatorCopper: { emissivity: 0.78, absorptivity: 0.42 },
+                copper: { emissivity: 0.20, absorptivity: 0.32 },
+                silicon: { emissivity: 0.78, absorptivity: 0.72 }
+            };
+
+            const SPEEDS = [
+                { label: "1 sec/s", value: 1 },
+                { label: "1 min/s", value: 60 },
+                { label: "10 min/s", value: 600 },
+                { label: "1 hr/s", value: 3600 },
+                { label: "6 hr/s", value: 21600 },
+                { label: "1 day/s", value: 86400 }
+            ];
+
+            const state = {
+                view: "metal",
+                playing: true,
+                orbiting: true,
+                photoMode: false,
+                speedIndex: 3,
+                simTime: 0,
+                orbitTime: 0,
+                massKg: 1500,
+                detailScale: 1.0,
+                cameraDistance: 0.010,
+                lastNet: 0,
+                cameraDirty: true,
+                lastSatQuaternion: null,
+                simAccumulator: 0
+            };
+
+            const elements = {
+                canvas: document.getElementById("scene-canvas"),
+                view: document.getElementById("view"),
+                controlRail: document.getElementById("control-rail"),
+                environmentPanel: document.getElementById("environment"),
+                errorLog: document.getElementById("error-log"),
+                playState: document.getElementById("play-state"),
+                metricTime: document.getElementById("metric-time"),
+                metricChipCenter: document.getElementById("metric-chip-center"),
+                metricChipEdge: document.getElementById("metric-chip-edge"),
+                metricSink: document.getElementById("metric-sink"),
+                metricBus: document.getElementById("metric-bus"),
+                metricRadNear: document.getElementById("metric-rad-near"),
+                metricRadCenter: document.getElementById("metric-rad-center"),
+                metricRadFar: document.getElementById("metric-rad-far"),
+                metricPvFace: document.getElementById("metric-pv-face"),
+                metricPanelBack: document.getElementById("metric-panel-back"),
+                metricPv: document.getElementById("metric-pv"),
+                metricSun: document.getElementById("metric-sun"),
+                legendTicks: [
+                    document.getElementById("legend-tick-0"),
+                    document.getElementById("legend-tick-1"),
+                    document.getElementById("legend-tick-2"),
+                    document.getElementById("legend-tick-3"),
+                    document.getElementById("legend-tick-4"),
+                    document.getElementById("legend-tick-5")
+                ],
+                envSun: document.getElementById("env-sun"),
+                envIr: document.getElementById("env-ir"),
+                envAlbedo: document.getElementById("env-albedo"),
+                envSpan: document.getElementById("env-span"),
+                envChipArea: document.getElementById("env-chip-area"),
+                envRadArea: document.getElementById("env-rad-area"),
+                legend: document.getElementById("legend"),
+                playBtn: document.getElementById("play-btn"),
+                pauseBtn: document.getElementById("pause-btn"),
+                resetBtn: document.getElementById("reset-btn"),
+                orbitBtn: document.getElementById("orbit-btn"),
+                speedSlider: document.getElementById("speed-slider"),
+                speedLabel: document.getElementById("speed-label"),
+                scaleSlider: document.getElementById("scale-slider"),
+                scaleLabel: document.getElementById("scale-label"),
+                summaryCenter: document.getElementById("summary-thick-center"),
+                summaryEdge: document.getElementById("summary-thick-edge"),
+                summarySinkMass: document.getElementById("summary-sink-mass"),
+                summaryRadMass: document.getElementById("summary-rad-mass"),
+                summaryTransportMass: document.getElementById("summary-transport-mass"),
+                summaryActiveArea: document.getElementById("summary-active-area")
+            };
+
+            if (!window.THREE || !window.THREE.OrbitControls) {
+                showError(new Error("Three.js or OrbitControls did not load."));
+                return;
+            }
+
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x151515, 0.000032);
+
+            const camera = new THREE.PerspectiveCamera(43, 1, 0.00002, 52000);
+            camera.position.set(0.34, 0.18, 0.18);
+
+            const renderer = new THREE.WebGLRenderer({
+                canvas: elements.canvas,
+                antialias: true,
+                alpha: false,
+                logarithmicDepthBuffer: true,
+                powerPreference: "high-performance"
+            });
+            renderer.setClearColor(0x151515, 1);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.92;
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.055;
+            controls.enablePan = true;
+            controls.screenSpacePanning = true;
+            controls.rotateSpeed = 0.48;
+            controls.zoomSpeed = 0.72;
+            controls.panSpeed = 0.55;
+            controls.minDistance = 0.003;
+            controls.maxDistance = 4.0;
+            controls.target.set(0, 0, 0);
+
+            let thermal;
+            let sceneObjects;
+            let lastFrame = performance.now();
+            const thermalColorRange = { min: K0, max: K0 + 80 };
+
+            function OrbitalThermalModel(totalMassKg) {
+                this.totalMassKg = totalMassKg;
+                this.nodes = {};
+                this.last = {};
+                this.reset(totalMassKg);
+            }
+
+            OrbitalThermalModel.prototype.reset = function (totalMassKg) {
+                this.totalMassKg = totalMassKg;
+                const transportMass = transportMassKgForTotal(totalMassKg);
+                const sinkMass = sinkMassKgForTotal(totalMassKg);
+                const trunkMass = transportMass;
+                const radiatorMass = radiatorMassKgForTotal(totalMassKg);
+                const activeRadiatorFaceArea = activeRadiatorFaceAreaM2(radiatorMass);
+                const massScale = Math.sqrt(totalMassKg / 250);
+                this.variant = {
+                    sinkMass,
+                    trunkMass,
+                    transportMass,
+                    radiatorMass,
+                    activeRadiatorFaceAreaM2: activeRadiatorFaceArea,
+                    activeRadiatorEmitAreaM2: activeRadiatorFaceArea * 2,
+                    radiatorAreaUtilization: activeRadiatorFaceArea / RADIATOR_FACE_AREA_M2,
+                    activeRadiatorWidthM: activeRadiatorWidthM(radiatorMass),
+                    activeRadiatorHeightM: activeRadiatorHeightM(radiatorMass),
+                    radNearMass: radiatorMass * 0.50,
+                    radCenterMass: radiatorMass * 0.32,
+                    radFarMass: radiatorMass * 0.18,
+                    avgRadiatorThicknessM: radiatorMass / (COPPER_RHO * activeRadiatorFaceArea),
+                    topRadiatorThicknessM: radiatorThicknessMAt(0.5, 0, totalMassKg),
+                    edgeRadiatorThicknessM: radiatorThicknessMAt(0, 1, totalMassKg)
+                };
+                const room = K0 + 20;
+                this.parts = {
+                    sink: makeVoxelGrid("sink", 50, 16, room, sinkMass * COPPER_CP, 62 * massScale, 48 * massScale, BUS_X_M * BUS_Y_M, SURFACES.copper.emissivity, SURFACES.copper.absorptivity),
+                    bus: makeVoxelGrid("bus", 72, 36, room, BUS_ALUMINUM_MASS_KG * ALUMINUM_CP, 5.4, 4.2, busShellSurfaceAreaM2(), SURFACES.busAluminum.emissivity, SURFACES.busAluminum.absorptivity),
+                    radiator: makeRadiatorVoxelGrid(room, radiatorMass, massScale, activeRadiatorFaceArea),
+                    panelFront: makeVoxelGrid("panelFront", 96, 14, room, SOLAR_ARRAY_AREA_M2 * 0.34 * 820, 0.52, 4.8, SOLAR_ARRAY_AREA_M2, SURFACES.pv.emissivity, SURFACES.pv.absorptivity),
+                    panelBack: makeVoxelGrid("panelBack", 96, 14, room, SOLAR_ARRAY_AREA_M2 * 0.55 * ALUMINUM_CP, 0.72, 7.4, SOLAR_ARRAY_AREA_M2, SURFACES.solarBack.emissivity, SURFACES.solarBack.absorptivity)
+                };
+                this.chips = makeChipArray(room, this.parts.sink);
+                this.coolant = makeCoolantLoop(room, transportMass);
+                this.nodes = {
+                    chipCenter: makeNode(room, 1),
+                    chipEdge: makeNode(room, 1),
+                    sink: makeNode(room, 1),
+                    trunk: makeNode(room, trunkMass * COPPER_CP),
+                    radNear: makeNode(room, 1),
+                    radCenter: makeNode(room, 1),
+                    radFar: makeNode(room, 1),
+                    bus: makeNode(room, 1),
+                    panelFront: makeNode(room, 1),
+                    panelBack: makeNode(room, 1)
+                };
+                this.last = {
+                    pvElectricW: 0,
+                    pvHeatW: 0,
+                    pvTempFactor: 1,
+                    radiatorRejectedW: 0,
+                    radiatorAbsorbedW: 0,
+                    radiatorSunCos: 0,
+                    earthIrFlux: 0,
+                    albedoFlux: 0,
+                    heatFlowW: 0,
+                    transportHeatW: 0,
+                    pumpPowerW: 0,
+                    loadPowerW: COMPUTE_POWER_W,
+                    transportCop: 0,
+                    coolantHotK: room,
+                    coolantColdK: room,
+                    busSunAbsorbedW: 0,
+                    busIrAbsorbedW: 0,
+                    busAlbedoAbsorbedW: 0,
+                    busSunLocal: new THREE.Vector3(0, 0, 1),
+                    busEarthLocal: new THREE.Vector3(0, 0, -1),
+                    busEarthAngular: 0,
+                    directSunWm2: 0,
+                    netW: 0
+                };
+                this.updateAggregates();
+            };
+
+            OrbitalThermalModel.prototype.step = function (totalDt, env) {
+                const clamped = Math.max(0, Math.min(totalDt, 86400 * 2));
+                if (clamped <= 1e-6) return;
+                const fullSteps = Math.floor(clamped / FIXED_SOLVER_STEP_S);
+                for (let i = 0; i < fullSteps; i++) this.stepOnce(FIXED_SOLVER_STEP_S, env);
+                const remainder = clamped - fullSteps * FIXED_SOLVER_STEP_S;
+                if (remainder > 1e-6) this.stepOnce(remainder, env);
+                this.updateAggregates();
+            };
+
+            OrbitalThermalModel.prototype.stepOnce = function (dt, env) {
+                const p = this.parts;
+                clearGridHeat(p.sink);
+                clearGridHeat(p.bus);
+                clearGridHeat(p.radiator);
+                clearGridHeat(p.panelFront);
+                clearGridHeat(p.panelBack);
+                const massScale = Math.sqrt(this.totalMassKg / 250);
+                const gChipCenterSink = CHIP_TO_SINK_G_CENTER_W_K;
+                const gChipEdgeSink = CHIP_TO_SINK_G_EDGE_W_K;
+                const sinkBusLinks = Math.min(p.sink.nx, p.bus.nx) * Math.min(p.sink.ny, p.bus.ny);
+                const gSinkBusCell = COMPUTE_TO_BUS_PARASITIC_G_W_K / Math.max(sinkBusLinks, 1);
+                const gSinkRadTotal = SINK_TO_RADIATOR_LOOP_G_W_K * massScale;
+                const panelLinks = Math.min(p.panelFront.nx, p.panelBack.nx) * Math.min(p.panelFront.ny, p.panelBack.ny);
+                const gPanelLaminateCell = SOLAR_PANEL_THROUGH_G_W_M2K * SOLAR_ARRAY_AREA_M2 / Math.max(panelLinks, 1);
+                const panelBusLinks = Math.min(10, p.panelBack.ny, p.bus.ny) * 2;
+                const gPanelBusCell = SOLAR_PANEL_STRUT_G_TOTAL_W_K / Math.max(panelBusLinks, 1);
+
+                for (let i = 0; i < this.chips.count; i++) this.chips.heat[i] = CHIP_POWER_W;
+
+                const directPanel = env.directSunWm2 * env.panelSunCos;
+                let pvElectric = 0;
+                let pvHeat = 0;
+                let pvTempFactorWeighted = 0;
+                for (let i = 0; i < p.panelFront.count; i++) {
+                    const area = p.panelFront.area[i];
+                    const incident = directPanel * area;
+                    const tempFactor = pvEfficiencyFactor(p.panelFront.t[i], directPanel);
+                    const cellAbsorbed = incident * PV_PACKING_FACTOR * SURFACES.pv.absorptivity;
+                    const substrateAbsorbed = incident * (1 - PV_PACKING_FACTOR) * 0.35;
+                    const electric = incident * PV_PACKING_FACTOR * SURFACES.pv.efficiency * tempFactor * PV_POWER_CONDITIONING_EFF * PV_EOL_FACTOR;
+                    const heat = Math.max(0, cellAbsorbed + substrateAbsorbed - electric);
+                    p.panelFront.heat[i] += heat;
+                    pvElectric += electric;
+                    pvHeat += heat;
+                    pvTempFactorWeighted += tempFactor * incident;
+                }
+                const pvTempFactor = directPanel > 1e-6 ? pvTempFactorWeighted / Math.max(directPanel * SOLAR_ARRAY_AREA_M2, 1e-9) : 0;
+                addDirectionalPanelFlux(p.panelFront, env.earthIrWm2 * env.panelFrontEarthView, SURFACES.pv.emissivity, env.earthLocal);
+                addDirectionalPanelFlux(p.panelFront, env.albedoWm2 * env.panelFrontEarthView, SURFACES.pv.absorptivity, env.earthLocal);
+                addDirectionalPanelFlux(p.panelBack, env.earthIrWm2 * env.panelBackEarthView, SURFACES.solarBack.emissivity, env.earthLocal);
+                addDirectionalPanelFlux(p.panelBack, env.albedoWm2 * env.panelBackEarthView, SURFACES.solarBack.absorptivity, env.earthLocal);
+                addRadiationLossGrid(p.panelFront, 0.985);
+                addRadiationLossGrid(p.panelBack, 0.94);
+
+                const busArea = 2 * (BUS_X_M * BUS_Y_M + BUS_X_M * BUS_Z_M + BUS_Y_M * BUS_Z_M);
+                const busSunLocal = busLocalDirection(env.sunLocal);
+                const busEarthLocal = busLocalDirection(env.earthLocal);
+                const busSunAbsorbed = addDirectionalBusFlux(p.bus, busSunLocal, env.directSunWm2, SURFACES.busAluminum.absorptivity);
+                const busIrAbsorbed = addEarthDiskBusFlux(p.bus, busEarthLocal, env.earthAngular, env.earthIrWm2, SURFACES.busAluminum.emissivity);
+                const busAlbedoAbsorbed = addEarthDiskBusFlux(p.bus, busEarthLocal, env.earthAngular, env.albedoWm2, SURFACES.busAluminum.absorptivity);
+                addRadiationLossGrid(p.bus, 0.74, busArea);
+
+                let radiatorRejected = 0;
+                let radiatorAbsorbed = addDirectionalRadiatorSolarFlux(p.radiator, env.sunLocal, env.radiatorDirectSunWm2, SURFACES.radiatorCopper.absorptivity);
+                for (let i = 0; i < p.radiator.count; i++) {
+                    const area = p.radiator.area[i];
+                    const earth = env.earthIrWm2 * env.radiatorEarthView * area * SURFACES.radiatorCopper.emissivity;
+                    const albedo = env.albedoWm2 * env.radiatorEarthView * area * SURFACES.radiatorCopper.absorptivity;
+                    const rejected = SIGMA * p.radiator.emissivity * area * (Math.pow(p.radiator.t[i], 4) - Math.pow(SPACE_TEMP_K, 4));
+                    p.radiator.heat[i] += earth + albedo - rejected;
+                    radiatorRejected += rejected;
+                    radiatorAbsorbed += earth + albedo;
+                }
+
+                applyChipHeat(this.chips, dt);
+                applyGridHeat(p.sink, dt);
+                applyGridHeat(p.bus, dt);
+                applyGridHeat(p.radiator, dt);
+                applyGridHeat(p.panelFront, dt);
+                applyGridHeat(p.panelBack, dt);
+
+                diffuseGrid(p.sink, dt);
+                diffuseGrid(p.bus, dt);
+                diffuseGrid(p.radiator, dt);
+                diffuseGrid(p.panelFront, dt);
+                diffuseGrid(p.panelBack, dt);
+                exchangeChipsWithSink(this.chips, p.sink, gChipCenterSink, gChipEdgeSink, dt);
+                exchangeAlignedGrids(p.sink, p.bus, gSinkBusCell, dt);
+                exchangeAlignedGrids(p.panelFront, p.panelBack, gPanelLaminateCell, dt);
+                exchangePanelToBus(p.panelBack, p.bus, gPanelBusCell, dt);
+                const transport = transportHeatToRadiator(p.sink, p.radiator, this.coolant, gSinkRadTotal, massScale, dt);
+
+                this.last.busSunAbsorbedW = busSunAbsorbed;
+                this.last.busIrAbsorbedW = busIrAbsorbed;
+                this.last.busAlbedoAbsorbedW = busAlbedoAbsorbed;
+                this.last.busSunLocal = busSunLocal.clone();
+                this.last.busEarthLocal = busEarthLocal.clone();
+                this.last.busEarthAngular = env.earthAngular;
+                this.last.directSunWm2 = env.directSunWm2;
+                this.last.pvElectricW = pvElectric;
+                this.last.pvHeatW = pvHeat;
+                this.last.pvTempFactor = pvTempFactor;
+                this.last.radiatorRejectedW = radiatorRejected;
+                this.last.radiatorAbsorbedW = radiatorAbsorbed;
+                this.last.radiatorSunCos = env.radiatorSunCos;
+                this.last.earthIrFlux = env.earthIrWm2 * env.radiatorEarthView;
+                this.last.albedoFlux = env.albedoWm2 * env.radiatorEarthView;
+                this.last.heatFlowW = transport.heatMovedW;
+                this.last.transportHeatW = transport.heatMovedW;
+                this.last.pumpPowerW = transport.pumpPowerW;
+                this.last.loadPowerW = COMPUTE_POWER_W + transport.pumpPowerW;
+                this.last.transportCop = transport.cop;
+                this.last.coolantHotK = transport.coolantHotK;
+                this.last.coolantColdK = transport.coolantColdK;
+                this.last.netW = COMPUTE_POWER_W + transport.pumpPowerW + radiatorAbsorbed - radiatorRejected;
+            };
+
+            OrbitalThermalModel.prototype.updateAggregates = function () {
+                const p = this.parts;
+                this.nodes.chipCenter.t = chipAverage(this.chips, true);
+                this.nodes.chipEdge.t = chipAverage(this.chips, false);
+                this.nodes.sink.t = gridAverage(p.sink);
+                this.nodes.trunk.t = lerp(this.nodes.sink.t, gridBandAverage(p.radiator, 0, 0.18), 0.45);
+                this.nodes.radNear.t = gridBandAverage(p.radiator, 0, 0.27);
+                this.nodes.radCenter.t = gridBandAverage(p.radiator, 0.37, 0.63);
+                this.nodes.radFar.t = gridBandAverage(p.radiator, 0.73, 1.0);
+                this.nodes.bus.t = gridAverage(p.bus);
+                this.nodes.panelFront.t = gridAverage(p.panelFront);
+                this.nodes.panelBack.t = gridAverage(p.panelBack);
+            };
+
+            function makeVoxelGrid(name, nx, ny, temperatureK, capacityTotal, gx, gy, areaTotal, emissivity, absorptivity, capWeights = null) {
+                const count = nx * ny;
+                const t = new Float64Array(count);
+                const heat = new Float64Array(count);
+                const cap = new Float64Array(count);
+                const area = new Float64Array(count);
+                t.fill(temperatureK);
+                let weightSum = 0;
+                if (capWeights) {
+                    for (let i = 0; i < count; i++) weightSum += capWeights[i];
+                } else {
+                    weightSum = count;
+                }
+                for (let i = 0; i < count; i++) {
+                    const w = capWeights ? capWeights[i] : 1;
+                    cap[i] = capacityTotal * w / Math.max(weightSum, 1e-9);
+                    area[i] = areaTotal / count;
+                }
+                return { name, nx, ny, count, t, heat, cap, area, gx, gy, emissivity, absorptivity };
+            }
+
+            function makeRadiatorVoxelGrid(temperatureK, radiatorMass, massScale, activeFaceAreaM2) {
+                const nx = 44;
+                const ny = 88;
+                const weights = new Float64Array(nx * ny);
+                const localY = new Float64Array(nx * ny);
+                for (let y = 0; y < ny; y++) {
+                    const v = y / Math.max(ny - 1, 1);
+                    for (let x = 0; x < nx; x++) {
+                        const u01 = x / Math.max(nx - 1, 1);
+                        const id = y * nx + x;
+                        weights[id] = radiatorThicknessWeightAt(u01, v);
+                        localY[id] = v;
+                    }
+                }
+                const grid = makeVoxelGrid(
+                    "radiator",
+                    nx,
+                    ny,
+                    temperatureK,
+                    radiatorMass * COPPER_CP,
+                    29.0 * massScale,
+                    25.0 * massScale,
+                    activeFaceAreaM2 * 2,
+                    SURFACES.radiatorCopper.emissivity,
+                    SURFACES.radiatorCopper.absorptivity,
+                    weights
+                );
+                grid.localY = localY;
+                grid.thicknessWeight = weights;
+                grid.activeFaceAreaM2 = activeFaceAreaM2;
+                grid.activeWidthM = activeRadiatorWidthM(radiatorMass);
+                grid.activeHeightM = activeRadiatorHeightM(radiatorMass);
+                grid.activeAreaFraction = activeFaceAreaM2 / RADIATOR_FACE_AREA_M2;
+                return grid;
+            }
+
+            function makeChipArray(temperatureK, sinkGrid) {
+                const t = new Float64Array(CHIP_COUNT);
+                const heat = new Float64Array(CHIP_COUNT);
+                const cap = new Float64Array(CHIP_COUNT);
+                const sinkIndex = new Int32Array(CHIP_COUNT);
+                const center = new Uint8Array(CHIP_COUNT);
+                t.fill(temperatureK);
+                for (let row = 0; row < 10; row++) {
+                    for (let col = 0; col < 10; col++) {
+                        const id = row * 10 + col;
+                        const sx = Math.round(lerp(sinkGrid.nx * 0.08, sinkGrid.nx * 0.92 - 1, col / 9));
+                        const sy = Math.round(lerp(sinkGrid.ny * 0.12, sinkGrid.ny * 0.88 - 1, row / 9));
+                        sinkIndex[id] = clampIndex(sx, 0, sinkGrid.nx - 1) + clampIndex(sy, 0, sinkGrid.ny - 1) * sinkGrid.nx;
+                        center[id] = row >= 2 && row <= 7 && col >= 2 && col <= 7 ? 1 : 0;
+                        cap[id] = (center[id] ? 145 : 170);
+                    }
+                }
+                return { count: CHIP_COUNT, t, heat, cap, sinkIndex, center };
+            }
+
+            function makeCoolantLoop(temperatureK, transportMassKg = transportMassKgForTotal(state.massKg)) {
+                const dryMassKg = THERMAL_TRANSPORT_MODE === "liquidCoolant" ? Math.max(0, transportMassKg - COOLANT_FLUID_MASS_KG) : 0;
+                return {
+                    hotK: temperatureK,
+                    coldK: temperatureK,
+                    massKg: COOLANT_LOOP_MASS_KG,
+                    dryMassKg,
+                    cp: COOLANT_CP_J_KGK,
+                    dryCp: ALUMINUM_CP,
+                    thermalCapJPerK: COOLANT_LOOP_MASS_KG * COOLANT_CP_J_KGK + dryMassKg * ALUMINUM_CP
+                };
+            }
+
+            function clearGridHeat(grid) {
+                grid.heat.fill(0);
+            }
+
+            function addUniformHeat(grid, watts) {
+                const perCell = watts / grid.count;
+                for (let i = 0; i < grid.count; i++) grid.heat[i] += perCell;
+            }
+
+            function addDirectionalPanelFlux(grid, fluxWm2, surfaceFactor, earthLocal) {
+                const spanBias = earthLocal ? earthLocal.y * 0.14 : 0;
+                for (let y = 0; y < grid.ny; y++) {
+                    const across = y / Math.max(grid.ny - 1, 1) - 0.5;
+                    const gradient = clamp(1 + spanBias * across, 0.86, 1.14);
+                    for (let x = 0; x < grid.nx; x++) {
+                        const id = y * grid.nx + x;
+                        grid.heat[id] += fluxWm2 * surfaceFactor * grid.area[id] * gradient;
+                    }
+                }
+            }
+
+            function addDirectionalBusFlux(grid, directionLocal, fluxWm2, surfaceFactor) {
+                if (!directionLocal || fluxWm2 <= 0 || surfaceFactor <= 0) return 0;
+                let total = 0;
+                const d = directionLocal;
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, d.x) * BUS_Y_M * BUS_Z_M * surfaceFactor, (x01) => edgeWeight(x01, 1, 9.0), "edge-x-pos-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, -d.x) * BUS_Y_M * BUS_Z_M * surfaceFactor, (x01) => edgeWeight(x01, 0, 9.0), "edge-x-neg-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, d.y) * BUS_X_M * BUS_Z_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 1, 9.0), "edge-y-pos-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, -d.y) * BUS_X_M * BUS_Z_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 0, 9.0), "edge-y-neg-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, d.z) * BUS_X_M * BUS_Y_M * surfaceFactor, (x01, y01) => broadFaceWeight(x01, y01, d), "sun-z-pos-broad");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, -d.z) * BUS_X_M * BUS_Y_M * surfaceFactor, (x01, y01) => broadFaceWeight(x01, y01, d.clone ? d.clone().multiplyScalar(-1) : { x: -d.x, y: -d.y, z: -d.z }), "sun-z-neg-broad");
+                return total;
+            }
+
+            function addEarthDiskBusFlux(grid, earthLocal, earthAngular, fluxWm2, surfaceFactor) {
+                if (!earthLocal || fluxWm2 <= 0 || surfaceFactor <= 0) return 0;
+                const d = earthLocal.clone ? earthLocal.clone().normalize() : earthLocal;
+                let total = 0;
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(d.x, earthAngular) * BUS_Y_M * BUS_Z_M * surfaceFactor, (x01) => edgeWeight(x01, 1, 9.0), "earth-x-pos-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(-d.x, earthAngular) * BUS_Y_M * BUS_Z_M * surfaceFactor, (x01) => edgeWeight(x01, 0, 9.0), "earth-x-neg-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(d.y, earthAngular) * BUS_X_M * BUS_Z_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 1, 9.0), "earth-y-pos-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(-d.y, earthAngular) * BUS_X_M * BUS_Z_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 0, 9.0), "earth-y-neg-9");
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(d.z, earthAngular) * BUS_X_M * BUS_Y_M * surfaceFactor, () => 1, "earth-z-pos");
+                total += addWeightedGridHeat(grid, fluxWm2 * diskViewFactorOneSided(-d.z, earthAngular) * BUS_X_M * BUS_Y_M * surfaceFactor, () => 1, "earth-z-neg");
+                return total;
+            }
+
+            function addDirectionalRadiatorSolarFlux(grid, directionLocal, fluxWm2, surfaceFactor) {
+                if (!directionLocal || fluxWm2 <= 0 || surfaceFactor <= 0) return 0;
+                const d = directionLocal;
+                const faceArea = grid.activeFaceAreaM2 || RADIATOR_FACE_AREA_M2;
+                const widthM = grid.activeWidthM || RADIATOR_WIDTH_M;
+                const heightM = grid.activeHeightM || RADIATOR_HEIGHT_M;
+                let total = 0;
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.abs(d.y) * faceArea * surfaceFactor, () => 1, "face-y");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, d.x) * widthM * RADIATOR_EDGE_SOLAR_DEPTH_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 0, 12.0), "edge-length-x-pos-12");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, -d.x) * widthM * RADIATOR_EDGE_SOLAR_DEPTH_M * surfaceFactor, (x01, y01) => edgeWeight(y01, 1, 12.0), "edge-length-x-neg-12");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, d.z) * heightM * RADIATOR_EDGE_SOLAR_DEPTH_M * surfaceFactor, (x01) => edgeWeight(x01, 1, 12.0), "edge-width-z-pos-12");
+                total += addWeightedGridHeat(grid, fluxWm2 * Math.max(0, -d.z) * heightM * RADIATOR_EDGE_SOLAR_DEPTH_M * surfaceFactor, (x01) => edgeWeight(x01, 0, 12.0), "edge-width-z-neg-12");
+                return total;
+            }
+
+            function addWeightedGridHeat(grid, totalWatts, weightFn, cacheKey = null) {
+                if (totalWatts <= 0) return 0;
+                if (cacheKey) {
+                    if (!grid.weightCache) grid.weightCache = {};
+                    if (!grid.weightCache[cacheKey]) {
+                        const weights = new Float64Array(grid.count);
+                        let sum = 0;
+                        for (let y = 0; y < grid.ny; y++) {
+                            const y01 = y / Math.max(grid.ny - 1, 1);
+                            for (let x = 0; x < grid.nx; x++) {
+                                const x01 = x / Math.max(grid.nx - 1, 1);
+                                const i = y * grid.nx + x;
+                                weights[i] = Math.max(0, weightFn(x01, y01));
+                                sum += weights[i];
+                            }
+                        }
+                        if (sum > 1e-9) {
+                            for (let i = 0; i < weights.length; i++) weights[i] /= sum;
+                        }
+                        grid.weightCache[cacheKey] = weights;
+                    }
+                    const weights = grid.weightCache[cacheKey];
+                    for (let i = 0; i < grid.count; i++) grid.heat[i] += totalWatts * weights[i];
+                    return totalWatts;
+                }
+                let weightSum = 0;
+                for (let y = 0; y < grid.ny; y++) {
+                    const y01 = y / Math.max(grid.ny - 1, 1);
+                    for (let x = 0; x < grid.nx; x++) {
+                        const x01 = x / Math.max(grid.nx - 1, 1);
+                        weightSum += Math.max(0, weightFn(x01, y01));
+                    }
+                }
+                if (weightSum <= 1e-9) return 0;
+                const scale = totalWatts / weightSum;
+                for (let y = 0; y < grid.ny; y++) {
+                    const y01 = y / Math.max(grid.ny - 1, 1);
+                    for (let x = 0; x < grid.nx; x++) {
+                        const x01 = x / Math.max(grid.nx - 1, 1);
+                        const i = y * grid.nx + x;
+                        grid.heat[i] += Math.max(0, weightFn(x01, y01)) * scale;
+                    }
+                }
+                return totalWatts;
+            }
+
+            function edgeWeight(value01, side, sharpness) {
+                const distance = side > 0 ? 1 - value01 : value01;
+                return Math.exp(-Math.pow(distance * sharpness, 2));
+            }
+
+            function broadFaceWeight(x01, y01, directionLocal) {
+                const bx = clamp(directionLocal.x || 0, -1, 1) * 0.10 * (x01 - 0.5);
+                const by = clamp(directionLocal.y || 0, -1, 1) * 0.10 * (y01 - 0.5);
+                const mildPanelGradient = clamp(directionLocal.z || 0, -1, 1) * 0.06 * (0.5 - Math.abs(x01 - 0.5));
+                return clamp(1 + bx + by + mildPanelGradient, 0.84, 1.16);
+            }
+
+            function addRadiationLossGrid(grid, viewFactor, overrideArea = null) {
+                const areaScale = overrideArea ? overrideArea / grid.count : null;
+                const cold4 = Math.pow(SPACE_TEMP_K, 4);
+                for (let i = 0; i < grid.count; i++) {
+                    const area = areaScale || grid.area[i];
+                    grid.heat[i] -= SIGMA * grid.emissivity * area * viewFactor * (Math.pow(grid.t[i], 4) - cold4);
+                }
+            }
+
+            function pvEfficiencyFactor(tempK, irradianceWm2) {
+                const irradianceRatio = clamp(irradianceWm2 / SOLAR_CONSTANT, 0, 1.35);
+                if (irradianceRatio <= 1e-6) return 0;
+                const lowLightFactor = clamp(0.92 + 0.08 * Math.sqrt(irradianceRatio), 0.65, 1.03);
+                const thermalFactor = 1 + PV_POWER_TEMP_COEFF_PER_K * (tempK - PV_REF_TEMP_K);
+                return clamp(lowLightFactor * thermalFactor, PV_FACTOR_MIN, PV_FACTOR_MAX);
+            }
+
+            function diodeVoc(tempK, photocurrent, refI0) {
+                const tempRatio = tempK / PV_REF_TEMP_K;
+                const egRef = siliconBandgapEv(PV_REF_TEMP_K);
+                const eg = siliconBandgapEv(tempK);
+                const i0 = refI0 * Math.pow(tempRatio, 3) *
+                    Math.exp((egRef / PV_REF_TEMP_K - eg / tempK) / (PV_DIODE_IDEALITY * BOLTZMANN_EV_PER_K));
+                const thermalVoltage = PV_DIODE_IDEALITY * BOLTZMANN_EV_PER_K * tempK;
+                return Math.max(0, thermalVoltage * Math.log(Math.max(photocurrent, 0) / Math.max(i0, 1e-30) + 1));
+            }
+
+            function diodeFillFactor(normalizedVoc) {
+                if (normalizedVoc <= 0) return 0;
+                return clamp((normalizedVoc - Math.log(normalizedVoc + 0.72)) / (normalizedVoc + 1), 0, 0.90);
+            }
+
+            function siliconBandgapEv(tempK) {
+                return 1.166 - (4.73e-4 * tempK * tempK) / (tempK + 636);
+            }
+
+            function applyChipHeat(chips, dt) {
+                for (let i = 0; i < chips.count; i++) {
+                    chips.t[i] = clamp(chips.t[i] + chips.heat[i] * dt / chips.cap[i], SPACE_TEMP_K, K0 + 720);
+                    chips.heat[i] = 0;
+                }
+            }
+
+            function applyGridHeat(grid, dt) {
+                for (let i = 0; i < grid.count; i++) {
+                    grid.t[i] = clamp(grid.t[i] + grid.heat[i] * dt / Math.max(grid.cap[i], 1), SPACE_TEMP_K, K0 + 720);
+                }
+            }
+
+            function diffuseGrid(grid, dt) {
+                const nx = grid.nx;
+                const ny = grid.ny;
+                for (let y = 0; y < ny; y++) {
+                    for (let x = 0; x < nx - 1; x++) {
+                        const i = y * nx + x;
+                        exchangeCell(grid.t, grid.cap, i, i + 1, grid.gx, dt);
+                    }
+                }
+                for (let y = 0; y < ny - 1; y++) {
+                    for (let x = 0; x < nx; x++) {
+                        const i = y * nx + x;
+                        exchangeCell(grid.t, grid.cap, i, i + nx, grid.gy, dt);
+                    }
+                }
+            }
+
+            function exchangeCell(t, cap, a, b, conductance, dt) {
+                const ca = Math.max(cap[a], 1);
+                const cb = Math.max(cap[b], 1);
+                const totalCap = ca + cb;
+                const tau = ca * cb / Math.max(conductance * totalCap, 1e-9);
+                const eq = (ca * t[a] + cb * t[b]) / totalCap;
+                const decay = Math.exp(-dt / Math.max(tau, 1e-6));
+                t[a] = clamp(eq + (t[a] - eq) * decay, SPACE_TEMP_K, K0 + 720);
+                t[b] = clamp(eq + (t[b] - eq) * decay, SPACE_TEMP_K, K0 + 720);
+            }
+
+            function exchangeChipsWithSink(chips, sink, gCenter, gEdge, dt) {
+                for (let i = 0; i < chips.count; i++) {
+                    const j = chips.sinkIndex[i];
+                    const conductance = chips.center[i] ? gCenter : gEdge;
+                    const sx = j % sink.nx;
+                    const sy = Math.floor(j / sink.nx);
+                    let weightSum = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const distance = Math.abs(dx) + Math.abs(dy);
+                            weightSum += distance === 0 ? 1.0 : distance === 1 ? 0.55 : 0.28;
+                        }
+                    }
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const x = clampIndex(sx + dx, 0, sink.nx - 1);
+                            const y = clampIndex(sy + dy, 0, sink.ny - 1);
+                            const distance = Math.abs(dx) + Math.abs(dy);
+                            const weight = distance === 0 ? 1.0 : distance === 1 ? 0.55 : 0.28;
+                            exchangeArrays(chips.t, chips.cap, i, sink.t, sink.cap, y * sink.nx + x, conductance * weight / weightSum, dt);
+                        }
+                    }
+                }
+            }
+
+            function exchangeAlignedGrids(a, b, conductance, dt) {
+                const nx = Math.min(a.nx, b.nx);
+                const ny = Math.min(a.ny, b.ny);
+                for (let y = 0; y < ny; y++) {
+                    const ay = Math.round(y / Math.max(ny - 1, 1) * (a.ny - 1));
+                    const by = Math.round(y / Math.max(ny - 1, 1) * (b.ny - 1));
+                    for (let x = 0; x < nx; x++) {
+                        const ax = Math.round(x / Math.max(nx - 1, 1) * (a.nx - 1));
+                        const bx = Math.round(x / Math.max(nx - 1, 1) * (b.nx - 1));
+                        exchangeArrays(a.t, a.cap, ay * a.nx + ax, b.t, b.cap, by * b.nx + bx, conductance, dt);
+                    }
+                }
+            }
+
+            function exchangePanelToBus(panel, bus, conductance, dt) {
+                const yCount = Math.min(10, panel.ny, bus.ny);
+                for (let y = 0; y < yCount; y++) {
+                    const py = Math.round(y / Math.max(yCount - 1, 1) * (panel.ny - 1));
+                    const by = Math.round(y / Math.max(yCount - 1, 1) * (bus.ny - 1));
+                    for (const px of [0, panel.nx - 1]) {
+                        const bx = px === 0 ? 0 : bus.nx - 1;
+                        exchangeArrays(panel.t, panel.cap, py * panel.nx + px, bus.t, bus.cap, by * bus.nx + bx, conductance, dt);
+                    }
+                }
+            }
+
+            function exchangeSinkToRadiator(sink, radiator, totalConductance, dt) {
+                // The transport hardware is no longer a root-only magic link.  It couples the
+                // sink plate into a full-face heat-pipe/coolant pattern so the radiator edges
+                // participate thermally instead of remaining cold visual decoration.
+                const rows = [0.10, 0.28, 0.46, 0.64, 0.82, 0.95];
+                const rowWeights = [0.24, 0.20, 0.18, 0.16, 0.13, 0.09];
+                const each = totalConductance / Math.max(sink.count, 1);
+                for (let y = 0; y < sink.ny; y++) {
+                    const v = y / Math.max(sink.ny - 1, 1);
+                    for (let x = 0; x < sink.nx; x++) {
+                        const u = x / Math.max(sink.nx - 1, 1);
+                        const si = y * sink.nx + x;
+                        for (let k = 0; k < rows.length; k++) {
+                            const rx = clampIndex(lerp(radiator.nx * 0.035, radiator.nx * 0.965 - 1, u), 0, radiator.nx - 1);
+                            const ry = clampIndex(lerp(0, radiator.ny - 1, clamp(rows[k] + (v - 0.5) * 0.052, 0, 1)), 0, radiator.ny - 1);
+                            exchangeArrays(sink.t, sink.cap, si, radiator.t, radiator.cap, ry * radiator.nx + rx, each * rowWeights[k], dt);
+                        }
+                    }
+                }
+            }
+
+            function transportHeatToRadiator(sink, radiator, coolant, totalConductance, massScale, dt) {
+                if (THERMAL_TRANSPORT_MODE === "heatPump") {
+                    return heatPumpTransport(sink, radiator, totalConductance, massScale, dt);
+                }
+                if (THERMAL_TRANSPORT_MODE === "liquidCoolant") {
+                    return liquidCoolantTransport(sink, radiator, coolant, massScale, dt);
+                }
+                const beforeSink = gridAverage(sink);
+                const beforeRadiator = gridBandAverage(radiator, 0, 0.28);
+                exchangeSinkToRadiator(sink, radiator, totalConductance, dt);
+                return {
+                    heatMovedW: totalConductance * (beforeSink - beforeRadiator),
+                    pumpPowerW: 0,
+                    cop: 0,
+                    coolantHotK: coolant ? coolant.hotK : SPACE_TEMP_K,
+                    coolantColdK: coolant ? coolant.coldK : SPACE_TEMP_K
+                };
+            }
+
+            function heatPumpTransport(sink, radiator, totalConductance, massScale, dt) {
+                exchangeSinkToRadiator(sink, radiator, totalConductance * HEAT_PUMP_PASSIVE_G_FRACTION, dt);
+                const sinkAvg = gridAverage(sink);
+                const radiatorAvg = gridAverage(radiator);
+                const controlDemandW = Math.max(0, (sinkAvg - HEAT_PUMP_TARGET_SINK_K) * HEAT_PUMP_CONTROL_UA_W_K * Math.max(0.7, Math.sqrt(massScale)));
+                const maxHeatW = HEAT_PUMP_MAX_HEAT_W * Math.max(0.85, Math.pow(massScale, 0.25));
+                const removableW = gridEnergyAbove(sink, HEAT_PUMP_MIN_SINK_K) / Math.max(dt, 1e-6);
+                const requestedColdW = Math.min(maxHeatW, removableW, controlDemandW);
+                if (requestedColdW <= 1e-6) {
+                    return { heatMovedW: 0, pumpPowerW: 0, cop: HEAT_PUMP_MAX_COP, coolantHotK: radiatorAvg, coolantColdK: sinkAvg };
+                }
+                const coldSideK = Math.max(sinkAvg - HEAT_PUMP_EVAPORATOR_APPROACH_K, SPACE_TEMP_K + 1);
+                const hotSideK = Math.max(radiatorAvg + HEAT_PUMP_CONDENSER_APPROACH_K, coldSideK + 1.5);
+                const carnotCop = coldSideK / Math.max(hotSideK - coldSideK, 1.5);
+                const cop = clamp(HEAT_PUMP_CARNOT_FRACTION * carnotCop, HEAT_PUMP_MIN_COP, HEAT_PUMP_MAX_COP);
+                const removedJ = removeEnergyWeighted(sink, requestedColdW * dt, HEAT_PUMP_MIN_SINK_K, "heat-pump-evap", liquidColdPlateWeight);
+                const qColdW = removedJ / Math.max(dt, 1e-6);
+                const pumpPowerW = qColdW / Math.max(cop, 1e-6);
+                addEnergyWeighted(radiator, (qColdW + pumpPowerW) * dt, "heat-pump-condenser", radiatorUniformManifoldWeight);
+                return { heatMovedW: qColdW, pumpPowerW, cop, coolantHotK: hotSideK, coolantColdK: coldSideK };
+            }
+
+            function liquidCoolantTransport(sink, radiator, coolant, massScale, dt) {
+                if (!coolant) coolant = makeCoolantLoop(gridAverage(sink));
+                const sinkAvg = gridAverage(sink);
+                const radiatorAvg = gridAverage(radiator);
+                const flowScale = Math.max(0.75, Math.pow(massScale, 0.18));
+                const mdot = COOLANT_FLOW_KG_S * flowScale;
+                const cRate = Math.max(mdot * COOLANT_CP_J_KGK, 1);
+                const coldplateUa = COOLANT_COLDPLATE_UA_W_K * Math.max(0.9, Math.pow(massScale, 0.22));
+                const pickupEffectiveness = 1 - Math.exp(-coldplateUa / cRate);
+                const requestedPickupW = Math.max(0, pickupEffectiveness * cRate * (sinkAvg - coolant.coldK));
+                const maxPickupW = COOLANT_MAX_HEAT_W * Math.max(0.85, Math.pow(massScale, 0.20));
+                const removableW = gridEnergyAbove(sink, COOLANT_MIN_SINK_K) / Math.max(dt, 1e-6);
+                const pickupW = Math.min(requestedPickupW, maxPickupW, removableW);
+                const removedJ = removeEnergyWeighted(sink, pickupW * dt, COOLANT_MIN_SINK_K, "liquid-coldplate", liquidColdPlateWeight);
+                const qPickupW = removedJ / Math.max(dt, 1e-6);
+                const hotOutK = clamp(coolant.coldK + qPickupW / cRate, SPACE_TEMP_K, K0 + 720);
+                const radiatorUa = COOLANT_RADIATOR_UA_W_K * Math.max(0.9, Math.pow(massScale, 0.24));
+                const dumpEffectiveness = 1 - Math.exp(-radiatorUa / cRate);
+                const qDumpW = Math.max(0, dumpEffectiveness * cRate * (hotOutK - radiatorAvg));
+                const pumpPowerW = COOLANT_PUMP_POWER_W * Math.pow(flowScale, 3);
+                addEnergyWeighted(radiator, (qDumpW + pumpPowerW) * dt, "liquid-radiator-manifold", radiatorCoolantManifoldWeight);
+                const coldOutK = clamp(hotOutK - qDumpW / cRate + pumpPowerW / cRate, SPACE_TEMP_K, K0 + 720);
+                const residenceS = Math.max(coolant.thermalCapJPerK / Math.max(cRate, 1e-6), 0.3);
+                const mix = 1 - Math.exp(-dt / residenceS);
+                coolant.hotK = lerp(coolant.hotK, hotOutK, mix);
+                coolant.coldK = lerp(coolant.coldK, coldOutK, mix);
+                return { heatMovedW: qPickupW, pumpPowerW, cop: qPickupW / Math.max(pumpPowerW, 1e-6), coolantHotK: coolant.hotK, coolantColdK: coolant.coldK };
+            }
+
+            function gridEnergyAbove(grid, floorK) {
+                let energy = 0;
+                for (let i = 0; i < grid.count; i++) energy += Math.max(0, grid.t[i] - floorK) * Math.max(grid.cap[i], 1);
+                return energy;
+            }
+
+            function getGridWeights(grid, key, weightFn) {
+                if (!grid.transportWeightCache) grid.transportWeightCache = {};
+                if (!grid.transportWeightCache[key]) {
+                    const weights = new Float64Array(grid.count);
+                    let sum = 0;
+                    for (let y = 0; y < grid.ny; y++) {
+                        const y01 = y / Math.max(grid.ny - 1, 1);
+                        for (let x = 0; x < grid.nx; x++) {
+                            const x01 = x / Math.max(grid.nx - 1, 1);
+                            const i = y * grid.nx + x;
+                            const w = Math.max(0, weightFn(x01, y01));
+                            weights[i] = w;
+                            sum += w;
+                        }
+                    }
+                    if (sum > 1e-9) for (let i = 0; i < weights.length; i++) weights[i] /= sum;
+                    grid.transportWeightCache[key] = weights;
+                }
+                return grid.transportWeightCache[key];
+            }
+
+            function addEnergyWeighted(grid, joules, key, weightFn) {
+                if (joules <= 0) return 0;
+                const weights = getGridWeights(grid, key, weightFn);
+                for (let i = 0; i < grid.count; i++) {
+                    grid.t[i] = clamp(grid.t[i] + joules * weights[i] / Math.max(grid.cap[i], 1), SPACE_TEMP_K, K0 + 720);
+                }
+                return joules;
+            }
+
+            function removeEnergyWeighted(grid, requestedJ, floorK, key, weightFn) {
+                if (requestedJ <= 0) return 0;
+                const weights = getGridWeights(grid, key, weightFn);
+                let remaining = requestedJ;
+                let removed = 0;
+                for (let pass = 0; pass < 5 && remaining > 1e-6; pass++) {
+                    let availableWeight = 0;
+                    for (let i = 0; i < grid.count; i++) {
+                        if (grid.t[i] > floorK + 1e-6) availableWeight += weights[i];
+                    }
+                    if (availableWeight <= 1e-12) break;
+                    for (let i = 0; i < grid.count && remaining > 1e-6; i++) {
+                        if (grid.t[i] <= floorK + 1e-6) continue;
+                        const share = remaining * weights[i] / availableWeight;
+                        const available = Math.max(0, (grid.t[i] - floorK) * Math.max(grid.cap[i], 1));
+                        const take = Math.min(share, available);
+                        grid.t[i] -= take / Math.max(grid.cap[i], 1);
+                        remaining -= take;
+                        removed += take;
+                    }
+                }
+                return removed;
+            }
+
+            function liquidColdPlateWeight(x01, y01) {
+                const yn = (y01 - 0.5) * 2;
+                const xn = (x01 - 0.5) * 2;
+                const radial = xn * xn + yn * yn;
+                const core = Math.exp(-radial * 1.8);
+                const roll = 0.12 * Math.sin((x01 - 0.5) * 42 + (y01 - 0.5) * 37);
+                return Math.max(0.04, 0.32 + 0.88 * core + roll);
+            }
+
+            function radiatorUniformManifoldWeight(x01, y01) {
+                const centeredX = (x01 - 0.5) * 2;
+                const edgeChannel = 0.24 * Math.exp(-((Math.abs(centeredX) - 0.86) ** 2) * 22.0);
+                const serpentineBands = 0.22 * Math.cos((y01 * 10.0 + x01 * 2.0) * Math.PI) ** 2;
+                const rootAssist = 0.28 * Math.exp(-y01 * 3.2);
+                const fullFace = 0.58 + 0.16 * (1 - y01);
+                return Math.max(0.08, fullFace + rootAssist + serpentineBands + edgeChannel);
+            }
+
+            function radiatorCoolantManifoldWeight(x01, y01) {
+                const centeredX = (x01 - 0.5) * 2;
+                const edgeChannel = 0.30 * Math.exp(-((Math.abs(centeredX) - 0.88) ** 2) * 24.0);
+                const serpentine = 0.42 * Math.cos((y01 * 10.0 + x01 * 2.0) * Math.PI) ** 2;
+                const rootHeader = 0.26 * Math.exp(-y01 * 3.0);
+                const fullFace = 0.58 + 0.12 * y01;
+                return Math.max(0.08, fullFace + rootHeader + serpentine + edgeChannel);
+            }
+
+            function exchangeArrays(tA, capA, i, tB, capB, j, conductance, dt) {
+                const ca = Math.max(capA[i], 1);
+                const cb = Math.max(capB[j], 1);
+                const totalCap = ca + cb;
+                const tau = ca * cb / Math.max(conductance * totalCap, 1e-9);
+                const eq = (ca * tA[i] + cb * tB[j]) / totalCap;
+                const decay = Math.exp(-dt / Math.max(tau, 1e-6));
+                tA[i] = clamp(eq + (tA[i] - eq) * decay, SPACE_TEMP_K, K0 + 720);
+                tB[j] = clamp(eq + (tB[j] - eq) * decay, SPACE_TEMP_K, K0 + 720);
+            }
+
+            function gridAverage(grid) {
+                let energy = 0;
+                let cap = 0;
+                for (let i = 0; i < grid.count; i++) {
+                    energy += grid.t[i] * grid.cap[i];
+                    cap += grid.cap[i];
+                }
+                return cap > 0 ? energy / cap : SPACE_TEMP_K;
+            }
+
+            function gridBandAverage(grid, y0, y1) {
+                const start = Math.max(0, Math.floor(y0 * grid.ny));
+                const end = Math.min(grid.ny, Math.max(start + 1, Math.ceil(y1 * grid.ny)));
+                let energy = 0;
+                let cap = 0;
+                for (let y = start; y < end; y++) {
+                    for (let x = 0; x < grid.nx; x++) {
+                        const i = y * grid.nx + x;
+                        energy += grid.t[i] * grid.cap[i];
+                        cap += grid.cap[i];
+                    }
+                }
+                return cap > 0 ? energy / cap : gridAverage(grid);
+            }
+
+            function sampleGrid(grid, x01, y01) {
+                const x = clamp(x01, 0, 1) * (grid.nx - 1);
+                const y = clamp(y01, 0, 1) * (grid.ny - 1);
+                const x0 = Math.floor(x);
+                const y0 = Math.floor(y);
+                const x1 = Math.min(grid.nx - 1, x0 + 1);
+                const y1 = Math.min(grid.ny - 1, y0 + 1);
+                const tx = x - x0;
+                const ty = y - y0;
+                const a = grid.t[y0 * grid.nx + x0];
+                const b = grid.t[y0 * grid.nx + x1];
+                const c = grid.t[y1 * grid.nx + x0];
+                const d = grid.t[y1 * grid.nx + x1];
+                return lerp(lerp(a, b, tx), lerp(c, d, tx), ty);
+            }
+
+            function chipAverage(chips, centerFlag) {
+                let sum = 0;
+                let count = 0;
+                for (let i = 0; i < chips.count; i++) {
+                    if (!!chips.center[i] !== !!centerFlag) continue;
+                    sum += chips.t[i];
+                    count++;
+                }
+                return count > 0 ? sum / count : SPACE_TEMP_K;
+            }
+
+            function makeNode(t, cap) {
+                return { t, cap };
+            }
+
+            function exchange(nodes, a, b, conductance, dt) {
+                const nodeA = nodes[a];
+                const nodeB = nodes[b];
+                const ca = Math.max(nodeA.cap, 1);
+                const cb = Math.max(nodeB.cap, 1);
+                const totalCap = ca + cb;
+                const tau = ca * cb / Math.max(conductance * totalCap, 1e-9);
+                const equilibrium = (ca * nodeA.t + cb * nodeB.t) / totalCap;
+                const decay = Math.exp(-dt / Math.max(tau, 1e-6));
+                nodeA.t = clamp(equilibrium + (nodeA.t - equilibrium) * decay, SPACE_TEMP_K, K0 + 600);
+                nodeB.t = clamp(equilibrium + (nodeB.t - equilibrium) * decay, SPACE_TEMP_K, K0 + 600);
+            }
+
+            function greybodyLoss(tempK, areaM2, emissivity, spaceView) {
+                const hot = Math.pow(Math.max(tempK, SPACE_TEMP_K), 4);
+                const cold = Math.pow(SPACE_TEMP_K, 4);
+                return SIGMA * emissivity * areaM2 * spaceView * (hot - cold);
+            }
+
+            thermal = new OrbitalThermalModel(state.massKg);
+            sceneObjects = createSceneObjects();
+            bindControls();
+            updateStaticReadouts();
+            updateVariantReadouts();
+            resize();
+            window.addEventListener("resize", resize);
+            requestAnimationFrame(animate);
+
+            function createSceneObjects() {
+                addLights();
+                addStars();
+
+                const earthGroup = new THREE.Group();
+                scene.add(earthGroup);
+
+                const textureLoader = new THREE.TextureLoader();
+                textureLoader.crossOrigin = "anonymous";
+                const earthMaterial = makeEarthShaderMaterial(makeEarthTexture());
+                const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_SCENE_RADIUS, 128, 96), earthMaterial);
+                earthGroup.add(earth);
+                const earthStarMask = new THREE.Mesh(
+                    new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.001, 128, 96),
+                    new THREE.MeshBasicMaterial({
+                        colorWrite: false,
+                        depthWrite: true,
+                        depthTest: true,
+                        depthFunc: THREE.AlwaysDepth
+                    })
+                );
+                earthStarMask.renderOrder = 1;
+                earthGroup.add(earthStarMask);
+                textureLoader.load(
+                    "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg",
+                    (texture) => {
+                        texture.encoding = THREE.sRGBEncoding;
+                        earthMaterial.uniforms.dayMap.value = texture;
+                    },
+                    undefined,
+                    () => {
+                        earthMaterial.uniforms.dayMap.value = makeEarthTexture();
+                    }
+                );
+
+                const clouds = new THREE.Mesh(
+                    new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.012, 96, 64),
+                    new THREE.MeshPhongMaterial({
+                        map: makeCloudTexture(),
+                        color: 0xffffff,
+                        transparent: true,
+                        opacity: 0.18,
+                        shininess: 2,
+                        depthWrite: false
+                    })
+                );
+                earthGroup.add(clouds);
+
+                const atmosphere = new THREE.Mesh(
+                    new THREE.SphereGeometry(EARTH_SCENE_RADIUS * 1.018, 96, 64),
+                    new THREE.MeshBasicMaterial({
+                        color: 0x65c8ff,
+                        transparent: true,
+                        opacity: 0.038,
+                        side: THREE.BackSide,
+                        blending: THREE.AdditiveBlending,
+                        depthWrite: false
+                    })
+                );
+                earthGroup.add(atmosphere);
+
+                const terminatorLine = new THREE.LineLoop(
+                    new THREE.BufferGeometry(),
+                    new THREE.LineBasicMaterial({ color: 0xffd46a, transparent: true, opacity: 0 })
+                );
+                terminatorLine.visible = false;
+                scene.add(terminatorLine);
+
+                const satellite = createSatelliteModel();
+                scene.add(satellite.root);
+
+                const sunGroup = new THREE.Group();
+                scene.add(sunGroup);
+                const sunMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(96, 48, 24),
+                    new THREE.MeshBasicMaterial({ color: 0xfffff0 })
+                );
+                sunGroup.add(sunMesh);
+                const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: makeSoftSunGlowTexture(),
+                    color: 0xffdfad,
+                    transparent: true,
+                    opacity: 0.82,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    depthTest: true
+                }));
+                sunGlow.scale.set(1400, 1400, 1);
+                sunGroup.add(sunGlow);
+
+                const sunLight = scene.userData.sunLight;
+                return { earthGroup, earth, clouds, atmosphere, terminatorLine, satellite, sunGroup, sunLight };
+            }
+
+            function createSatelliteModel() {
+                const root = new THREE.Group();
+                const components = [];
+                const chipMeshes = [];
+                const radiatorColor = { mesh: null, colorAttribute: null };
+                const edgeMaterial = new THREE.LineBasicMaterial({ color: 0xbfd8e4, transparent: true, opacity: 0.24 });
+                const ceramicMat = new THREE.MeshStandardMaterial({ color: 0x2b3133, roughness: 0.78, metalness: 0.05 });
+                const busMat = new THREE.MeshStandardMaterial({ color: 0xd1d4d3, roughness: 0.25, metalness: 0.88, side: THREE.DoubleSide });
+                const pvMat = new THREE.MeshStandardMaterial({ color: 0x163c6e, roughness: 0.22, metalness: 0.32, emissive: 0x031322, emissiveIntensity: 0.25 });
+                const backMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a3, roughness: 0.48, metalness: 0.72 });
+                const copperMat = new THREE.MeshStandardMaterial({ color: 0xd48645, roughness: 0.32, metalness: 0.84, emissive: 0x351204, emissiveIntensity: 0.08 });
+                const siliconMat = new THREE.MeshStandardMaterial({ color: 0x20252a, roughness: 0.18, metalness: 0.22, emissive: 0x07121b, emissiveIntensity: 0.12 });
+
+                const s = sceneScale();
+                const busGroup = new THREE.Group();
+                busGroup.rotation.y = BUS_VISUAL_ROTATION_Y;
+                root.add(busGroup);
+
+                const busThermalMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+                const bus = trackMesh(new THREE.Mesh(
+                    makeBusShellGeometry(BUS_X_M * s, BUS_Y_M * s, BUS_Z_M * s, 28, 42),
+                    busMat
+                ), "bus", busMat);
+                bus.userData.kind = "bus";
+                bus.userData.thermalMaterial = busThermalMat;
+                busGroup.add(bus);
+                addEdges(busGroup, new THREE.BoxGeometry(BUS_X_M * s, BUS_Y_M * s, BUS_Z_M * s), edgeMaterial, new THREE.Vector3());
+
+                const sinkThermalMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+                const computeDeck = trackMesh(new THREE.Mesh(makeSinkPlateGeometry(s), copperMat), "sink", copperMat);
+                computeDeck.userData.kind = "sink";
+                computeDeck.userData.thermalMaterial = sinkThermalMat;
+                computeDeck.position.set(0, 0, sinkCenterZ(s));
+                busGroup.add(computeDeck);
+
+                const crossThermalMat = sinkThermalMat.clone();
+                const sinkCrossX = trackMesh(new THREE.Mesh(makeCrossBarGeometry("x", s), copperMat), "sink", copperMat);
+                sinkCrossX.userData.kind = "sink";
+                sinkCrossX.userData.thermalMaterial = crossThermalMat;
+                sinkCrossX.position.set(0, 0, crossCenterZ(s));
+                busGroup.add(sinkCrossX);
+                const sinkCrossY = trackMesh(new THREE.Mesh(makeCrossBarGeometry("y", s), copperMat), "sink", copperMat);
+                sinkCrossY.userData.kind = "sink";
+                sinkCrossY.userData.thermalMaterial = crossThermalMat.clone();
+                sinkCrossY.position.set(0, 0, crossCenterZ(s));
+                busGroup.add(sinkCrossY);
+
+                const chipSide = CHIP_PACKAGE_VISUAL_SIDE_M * s;
+                for (let row = 0; row < 10; row++) {
+                    for (let col = 0; col < 10; col++) {
+                        const chipIndex = row * 10 + col;
+                        const centerChip = row >= 2 && row <= 7 && col >= 2 && col <= 7;
+                        const chip = trackMesh(new THREE.Mesh(
+                            new THREE.BoxGeometry(chipSide, chipSide, CHIP_PACKAGE_THICKNESS_M * s),
+                            siliconMat.clone()
+                        ), centerChip ? "chipCenter" : "chipEdge", siliconMat);
+                        chip.position.copy(chipPositionForIndex(chipIndex, s));
+                        chip.userData.chipIndex = chipIndex;
+                        busGroup.add(chip);
+                        chipMeshes.push(chip);
+                    }
+                }
+
+                const radiator = makeTaperedRadiatorGeometry(s);
+                const radiatorBaseMat = copperMat.clone();
+                const radiatorThermalMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+                const radiatorMesh = new THREE.Mesh(radiator.geometry, radiatorBaseMat);
+                applyRadiatorPose(radiatorMesh, s);
+                radiatorMesh.userData.baseMaterial = radiatorBaseMat;
+                radiatorMesh.userData.thermalMaterial = radiatorThermalMat;
+                radiatorMesh.userData.node = "radNear";
+                radiatorMesh.userData.kind = "radiator";
+                root.add(radiatorMesh);
+                radiatorColor.mesh = radiatorMesh;
+                radiatorColor.colorAttribute = radiator.colorAttribute;
+
+                const radiatorEdges = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(radiator.geometry),
+                    new THREE.LineBasicMaterial({ color: 0xf0c09a, transparent: true, opacity: 0.30 })
+                );
+                radiatorEdges.position.copy(radiatorMesh.position);
+                radiatorEdges.quaternion.copy(radiatorMesh.quaternion);
+                root.add(radiatorEdges);
+
+                const transportGroup = new THREE.Group();
+                root.add(transportGroup);
+                rebuildTransportVisualGroup(transportGroup, s);
+
+                addSolarWing(root, -1, s, pvMat, backMat, ceramicMat, components, busGroup);
+                addSolarWing(root, 1, s, pvMat, backMat, ceramicMat, components, busGroup);
+
+                return { root, components, chipMeshes, radiatorColor, radiatorEdges, computeDeck, sinkCrossX, sinkCrossY, busGroup, transportGroup };
+
+                function trackMesh(mesh, node, baseMaterial) {
+                    mesh.userData.node = node;
+                    mesh.userData.baseMaterial = baseMaterial;
+                    mesh.userData.thermalMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    components.push(mesh);
+                    return mesh;
+                }
+            }
+
+            function sinkThicknessM() {
+                const footprint = sinkFootprintM();
+                const plateMass = sinkMassKgForTotal(state.massKg) * 0.70;
+                return plateMass / (COPPER_RHO * footprint.x * footprint.y);
+            }
+
+            function sinkFootprintM() {
+                const massTone = clamp(Math.log(state.massKg / 100) / Math.log(10), 0, 1);
+                return {
+                    x: 4.75 + 0.55 * massTone,
+                    y: 3.12 + 0.32 * massTone
+                };
+            }
+
+            function sinkCenterZ(s) {
+                return -BUS_Z_M * s * 0.5 - sinkThicknessM() * s * 0.5;
+            }
+
+            function sinkBottomZ(s) {
+                return -BUS_Z_M * s * 0.5 - sinkThicknessM() * s;
+            }
+
+            function radiatorCenterZ(s) {
+                return sinkBottomZ(s) - CHIP_PACKAGE_THICKNESS_M * s - 0.006 * s;
+            }
+
+            function applyRadiatorPose(mesh, s) {
+                const basis = new THREE.Matrix4().makeBasis(
+                    new THREE.Vector3(0, 0, 1),
+                    new THREE.Vector3(0, -1, 0),
+                    new THREE.Vector3(1, 0, 0)
+                );
+                mesh.quaternion.setFromRotationMatrix(basis);
+                const rootX = radiatorCenterZ(s);
+                const activeHeight = activeRadiatorHeightM(radiatorMassKgForTotal(state.massKg)) * s;
+                mesh.position.set(
+                    rootX - activeHeight * 0.5,
+                    0,
+                    0
+                );
+            }
+
+            function busShellSurfaceAreaM2() {
+                return 2 * (BUS_X_M * BUS_Y_M + BUS_X_M * BUS_Z_M + BUS_Y_M * BUS_Z_M);
+            }
+
+            function busShellThicknessM() {
+                return BUS_ALUMINUM_MASS_KG / (ALUMINUM_RHO * busShellSurfaceAreaM2());
+            }
+
+            function chipPositionForIndex(index, s) {
+                const row = Math.floor(index / 10);
+                const col = index % 10;
+                const footprint = sinkFootprintM();
+                const pitchX = footprint.x * 0.78 * s / 9;
+                const pitchY = footprint.y * 0.78 * s / 9;
+                return new THREE.Vector3(
+                    (col - 4.5) * pitchX,
+                    (row - 4.5) * pitchY,
+                    sinkBottomZ(s) - CHIP_PACKAGE_THICKNESS_M * s * 0.5 - 0.004 * s
+                );
+            }
+
+            function crossThicknessM() {
+                const footprint = sinkFootprintM();
+                const massTone = clamp(Math.log(state.massKg / 100) / Math.log(10), 0, 1);
+                const bar = 0.54 + 0.18 * massTone;
+                const widthX = footprint.x * 1.08;
+                const depthY = footprint.y * 1.08;
+                const crossArea = widthX * bar + depthY * bar;
+                const crossMass = sinkMassKgForTotal(state.massKg) * 0.30;
+                return crossMass / (COPPER_RHO * crossArea);
+            }
+
+            function crossCenterZ(s) {
+                return sinkBottomZ(s) - crossThicknessM() * s * 0.5 - 0.002 * s;
+            }
+
+            function makeSinkPlateGeometry(s) {
+                const footprint = sinkFootprintM();
+                return makeThermalPlateGeometry(footprint.x * s, footprint.y * s, sinkThicknessM() * s, 50, 16);
+            }
+
+            function makeCrossBarGeometry(axis, s) {
+                const footprint = sinkFootprintM();
+                const massTone = clamp(Math.log(state.massKg / 100) / Math.log(10), 0, 1);
+                const bar = 0.54 + 0.18 * massTone;
+                const thickness = crossThicknessM();
+                const width = axis === "x" ? footprint.x * 1.08 : bar;
+                const depth = axis === "x" ? bar : footprint.y * 1.08;
+                const cols = axis === "x" ? 42 : 10;
+                const rows = axis === "x" ? 10 : 42;
+                return makeThermalPlateGeometry(width * s, depth * s, thickness * s, cols, rows);
+            }
+
+            function makeThermalPlateGeometry(width, depth, thickness, cols, rows) {
+                const vertices = [];
+                const colors = [];
+                const indices = [];
+                const rowStride = cols + 1;
+
+                function addSurface(z, reverse) {
+                    const offset = vertices.length / 3;
+                    for (let r = 0; r <= rows; r++) {
+                        const y = -depth / 2 + depth * r / rows;
+                        for (let c = 0; c <= cols; c++) {
+                            const x = -width / 2 + width * c / cols;
+                            vertices.push(x, y, z);
+                            colors.push(1, 1, 1);
+                        }
+                    }
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            const a = offset + r * rowStride + c;
+                            const b = a + 1;
+                            const d = offset + (r + 1) * rowStride + c;
+                            const e = d + 1;
+                            if (reverse) indices.push(a, d, b, b, d, e);
+                            else indices.push(a, b, d, b, e, d);
+                        }
+                    }
+                }
+
+                addSurface(thickness / 2, false);
+                addSurface(-thickness / 2, true);
+
+                const bottomOffset = rowStride * (rows + 1);
+                for (let c = 0; c < cols; c++) {
+                    const topA = c;
+                    const topB = c + 1;
+                    const botA = bottomOffset + c;
+                    const botB = bottomOffset + c + 1;
+                    indices.push(topA, topB, botA, topB, botB, botA);
+                    const topC = rows * rowStride + c;
+                    const topD = topC + 1;
+                    const botC = bottomOffset + rows * rowStride + c;
+                    const botD = botC + 1;
+                    indices.push(topC, botC, topD, topD, botC, botD);
+                }
+                for (let r = 0; r < rows; r++) {
+                    const topA = r * rowStride;
+                    const topB = (r + 1) * rowStride;
+                    const botA = bottomOffset + r * rowStride;
+                    const botB = bottomOffset + (r + 1) * rowStride;
+                    indices.push(topA, botA, topB, topB, botA, botB);
+                    const topC = r * rowStride + cols;
+                    const topD = (r + 1) * rowStride + cols;
+                    const botC = bottomOffset + r * rowStride + cols;
+                    const botD = bottomOffset + (r + 1) * rowStride + cols;
+                    indices.push(topC, topD, botC, topD, botD, botC);
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals();
+                return geometry;
+            }
+
+            function makeThermalBoxGeometry(width, height, depth, widthSegments, heightSegments, depthSegments) {
+                const geometry = new THREE.BoxGeometry(width, height, depth, widthSegments, heightSegments, depthSegments);
+                const colors = new Float32Array(geometry.attributes.position.count * 3);
+                colors.fill(1);
+                geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+                return geometry;
+            }
+
+            function makeBusShellGeometry(width, height, depth, cols, rows) {
+                const vertices = [];
+                const colors = [];
+                const indices = [];
+
+                function addGrid(uSegments, vSegments, pointForUv, reverse) {
+                    const offset = vertices.length / 3;
+                    const rowStride = uSegments + 1;
+                    for (let vIndex = 0; vIndex <= vSegments; vIndex++) {
+                        const v = vIndex / Math.max(vSegments, 1);
+                        for (let uIndex = 0; uIndex <= uSegments; uIndex++) {
+                            const u = uIndex / Math.max(uSegments, 1);
+                            const p = pointForUv(u, v);
+                            vertices.push(p.x, p.y, p.z);
+                            colors.push(1, 1, 1);
+                        }
+                    }
+                    for (let vIndex = 0; vIndex < vSegments; vIndex++) {
+                        for (let uIndex = 0; uIndex < uSegments; uIndex++) {
+                            const a = offset + vIndex * rowStride + uIndex;
+                            const b = a + 1;
+                            const d = offset + (vIndex + 1) * rowStride + uIndex;
+                            const e = d + 1;
+                            if (reverse) indices.push(a, d, b, b, d, e);
+                            else indices.push(a, b, d, b, e, d);
+                        }
+                    }
+                }
+
+                const zSegments = 4;
+                addGrid(cols, rows, (u, v) => new THREE.Vector3(
+                    -width / 2 + width * u,
+                    -height / 2 + height * v,
+                    depth / 2
+                ), false);
+                addGrid(cols, rows, (u, v) => new THREE.Vector3(
+                    -width / 2 + width * u,
+                    -height / 2 + height * v,
+                    -depth / 2
+                ), true);
+                addGrid(cols, zSegments, (u, v) => new THREE.Vector3(
+                    -width / 2 + width * u,
+                    -height / 2,
+                    -depth / 2 + depth * v
+                ), true);
+                addGrid(cols, zSegments, (u, v) => new THREE.Vector3(
+                    -width / 2 + width * u,
+                    height / 2,
+                    -depth / 2 + depth * v
+                ), false);
+                addGrid(rows, zSegments, (u, v) => new THREE.Vector3(
+                    -width / 2,
+                    -height / 2 + height * u,
+                    -depth / 2 + depth * v
+                ), false);
+                addGrid(rows, zSegments, (u, v) => new THREE.Vector3(
+                    width / 2,
+                    -height / 2 + height * u,
+                    -depth / 2 + depth * v
+                ), true);
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals();
+                geometry.userData.shellThicknessM = busShellThicknessM();
+                return geometry;
+            }
+
+            function radiatorThicknessWeightAt(u01, fromTop) {
+                const u = clamp(u01, 0, 1) * 2 - 1;
+                const v = clamp(fromTop, 0, 1);
+                const horizontalBar = Math.exp(-v * 7.8) * Math.exp(-Math.pow(Math.abs(u), 1.45) * 2.35);
+                const verticalStem = Math.exp(-u * u * 22.0) * Math.exp(-v * 1.65);
+                const junction = Math.exp(-u * u * 7.5 - v * 8.5);
+                return 0.30 + 4.7 * horizontalBar + 3.2 * verticalStem + 1.5 * junction;
+            }
+
+            function radiatorThicknessMeanWeight() {
+                if (radiatorThicknessMeanWeight.cached) return radiatorThicknessMeanWeight.cached;
+                let sum = 0;
+                const nx = 44;
+                const ny = 88;
+                for (let y = 0; y < ny; y++) {
+                    const v = y / Math.max(ny - 1, 1);
+                    for (let x = 0; x < nx; x++) {
+                        const u = x / Math.max(nx - 1, 1);
+                        sum += radiatorThicknessWeightAt(u, v);
+                    }
+                }
+                radiatorThicknessMeanWeight.cached = sum / (nx * ny);
+                return radiatorThicknessMeanWeight.cached;
+            }
+
+            function radiatorThicknessMAt(u01, fromTop, totalMassKg = state.massKg) {
+                const radiatorMass = radiatorMassKgForTotal(totalMassKg);
+                const avgThickness = radiatorMass / (COPPER_RHO * activeRadiatorFaceAreaM2(radiatorMass));
+                return avgThickness * radiatorThicknessWeightAt(u01, fromTop) / radiatorThicknessMeanWeight();
+            }
+
+            function radiatorRowWidthAt(fromTop, s, totalMassKg = state.massKg) {
+                const width = activeRadiatorWidthM(radiatorMassKgForTotal(totalMassKg)) * s;
+                const neckTarget = sinkFootprintM().y * 0.62 * s;
+                const topWidth = Math.min(width, Math.max(neckTarget, width * 0.38));
+                const blend = smoothstep(0.02, 0.24, fromTop);
+                return lerp(topWidth, width, blend);
+            }
+
+            function addSolarWing(root, sign, s, pvMat, backMat, ceramicMat, components, connectorRoot = root) {
+                const wing = new THREE.Group();
+                const eachLength = SOLAR_ARRAY_SPAN_M * 0.5;
+                const centerY = sign * (BUS_Y_M * 0.5 + eachLength * 0.5 + 1.4) * s;
+                wing.position.y = centerY;
+
+                const back = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.026 * s, eachLength * s, SOLAR_ARRAY_WIDTH_M * s),
+                    backMat
+                );
+                back.position.x = -0.018 * s;
+                back.userData.node = "panelBack";
+                back.userData.baseMaterial = backMat;
+                back.userData.thermalMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                components.push(back);
+                wing.add(back);
+
+                const pv = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.012 * s, eachLength * s, SOLAR_ARRAY_WIDTH_M * s * 0.985),
+                    pvMat
+                );
+                pv.position.x = 0.014 * s;
+                pv.userData.node = "panelFront";
+                pv.userData.baseMaterial = pvMat;
+                pv.userData.thermalMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                components.push(pv);
+                wing.add(pv);
+
+                const grid = makePanelGrid(eachLength * s, SOLAR_ARRAY_WIDTH_M * s, 12, 5, 0x75bde6);
+                grid.position.x = 0.023 * s;
+                wing.add(grid);
+
+                const frame = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.034 * s, eachLength * s, SOLAR_ARRAY_WIDTH_M * s)),
+                    new THREE.LineBasicMaterial({ color: 0x9fb6c2, transparent: true, opacity: 0.35 })
+                );
+                wing.add(frame);
+
+                root.add(wing);
+
+                const strutMat = ceramicMat.clone();
+                const gap = 1.4 * s;
+                const strutY = sign * (BUS_Y_M * 0.5 * s + gap * 0.5);
+                const connectorXs = [-0.34, 0, 0.34].map((x) => x * BUS_X_M * s);
+                for (const x of connectorXs) {
+                    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.034 * s, 0.034 * s, gap, 12), strutMat);
+                    strut.position.set(x, strutY, 0);
+                    connectorRoot.add(strut);
+                }
+            }
+
+            function makePanelGrid(length, width, lengthDivs, widthDivs, color) {
+                const group = new THREE.Group();
+                const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.36 });
+                const points = [];
+                for (let i = 0; i <= lengthDivs; i++) {
+                    const y = -length / 2 + length * i / lengthDivs;
+                    points.push(new THREE.Vector3(0, y, -width / 2), new THREE.Vector3(0, y, width / 2));
+                }
+                for (let i = 0; i <= widthDivs; i++) {
+                    const z = -width / 2 + width * i / widthDivs;
+                    points.push(new THREE.Vector3(0, -length / 2, z), new THREE.Vector3(0, length / 2, z));
+                }
+                const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), mat);
+                group.add(line);
+                return group;
+            }
+
+            function activeRadiatorFaceAreaM2(radiatorMassKg) {
+                return clamp(radiatorMassKg / RADIATOR_AREAL_DENSITY_KG_M2, RADIATOR_MIN_ACTIVE_FACE_AREA_M2, RADIATOR_FACE_AREA_M2);
+            }
+
+            function activeRadiatorWidthM(radiatorMassKg = radiatorMassKgForTotal(state.massKg)) {
+                const area = activeRadiatorFaceAreaM2(radiatorMassKg);
+                return Math.sqrt(area * RADIATOR_WIDTH_M / RADIATOR_HEIGHT_M);
+            }
+
+            function activeRadiatorHeightM(radiatorMassKg = radiatorMassKgForTotal(state.massKg)) {
+                const area = activeRadiatorFaceAreaM2(radiatorMassKg);
+                return Math.sqrt(area * RADIATOR_HEIGHT_M / RADIATOR_WIDTH_M);
+            }
+
+            function transportMassKgForTotal(totalMassKg) {
+                let requested = PASSIVE_HEAT_PIPE_MASS_KG;
+                if (THERMAL_TRANSPORT_MODE === "heatPump") requested = HEAT_PUMP_DRY_MASS_KG;
+                if (THERMAL_TRANSPORT_MODE === "liquidCoolant") requested = COOLANT_DRY_LOOP_MASS_KG + COOLANT_FLUID_MASS_KG;
+                return Math.min(requested, totalMassKg * 0.45);
+            }
+
+            function thermalSpreadMassKgForTotal(totalMassKg) {
+                return Math.max(totalMassKg - transportMassKgForTotal(totalMassKg), totalMassKg * 0.55);
+            }
+
+            function sinkMassKgForTotal(totalMassKg) {
+                return thermalSpreadMassKgForTotal(totalMassKg) * 0.42;
+            }
+
+            function radiatorMassKgForTotal(totalMassKg) {
+                return thermalSpreadMassKgForTotal(totalMassKg) * 0.58;
+            }
+
+            function makeTaperedRadiatorGeometry(s) {
+                const cols = 18;
+                const rows = 36;
+                const width = activeRadiatorWidthM(radiatorMassKgForTotal(state.massKg)) * s;
+                const height = activeRadiatorHeightM(radiatorMassKgForTotal(state.massKg)) * s;
+                const vertices = [];
+                const colors = [];
+                const indices = [];
+
+                function tAt(x, z, rowWidth) {
+                    const u01 = clamp((x / Math.max(rowWidth, 1e-9)) + 0.5, 0, 1);
+                    const fromTop = clamp((height * 0.5 - z) / Math.max(height, 1e-9), 0, 1);
+                    return radiatorThicknessMAt(u01, fromTop, state.massKg) * s;
+                }
+
+                for (let side = 0; side < 2; side++) {
+                    const sideSign = side === 0 ? -1 : 1;
+                    for (let r = 0; r <= rows; r++) {
+                        const z = -height / 2 + height * r / rows;
+                        const fromTop = clamp((height * 0.5 - z) / Math.max(height, 1e-9), 0, 1);
+                        const rowWidth = radiatorRowWidthAt(fromTop, s);
+                        for (let c = 0; c <= cols; c++) {
+                            const x = -rowWidth / 2 + rowWidth * c / cols;
+                            const y = sideSign * tAt(x, z, rowWidth) * 0.5;
+                            vertices.push(x, y, z);
+                            colors.push(1, 1, 1);
+                        }
+                    }
+                }
+
+                const rowStride = cols + 1;
+                for (let side = 0; side < 2; side++) {
+                    const offset = side * rowStride * (rows + 1);
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            const a = offset + r * rowStride + c;
+                            const b = a + 1;
+                            const d = offset + (r + 1) * rowStride + c;
+                            const e = d + 1;
+                            if (side === 0) indices.push(a, d, b, b, d, e);
+                            else indices.push(a, b, d, b, e, d);
+                        }
+                    }
+                }
+
+                const frontOffset = rowStride * (rows + 1);
+                for (let c = 0; c < cols; c++) {
+                    const a = c;
+                    const b = c + 1;
+                    const c2 = frontOffset + c;
+                    const d = frontOffset + c + 1;
+                    indices.push(a, b, c2, b, d, c2);
+                    const aTop = rows * rowStride + c;
+                    const bTop = aTop + 1;
+                    const cTop = frontOffset + rows * rowStride + c;
+                    const dTop = cTop + 1;
+                    indices.push(aTop, cTop, bTop, bTop, cTop, dTop);
+                }
+                for (let r = 0; r < rows; r++) {
+                    const a = r * rowStride;
+                    const b = (r + 1) * rowStride;
+                    const c2 = frontOffset + r * rowStride;
+                    const d = frontOffset + (r + 1) * rowStride;
+                    indices.push(a, c2, b, b, c2, d);
+                    const ar = r * rowStride + cols;
+                    const br = (r + 1) * rowStride + cols;
+                    const cr = frontOffset + r * rowStride + cols;
+                    const dr = frontOffset + (r + 1) * rowStride + cols;
+                    indices.push(ar, br, cr, br, dr, cr);
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+                const colorAttribute = new THREE.Float32BufferAttribute(colors, 3);
+                geometry.setAttribute("color", colorAttribute);
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals();
+                return { geometry, colorAttribute };
+            }
+
+            function clearVisualGroup(group) {
+                if (!group) return;
+                while (group.children.length) {
+                    const child = group.children[group.children.length - 1];
+                    group.remove(child);
+                    child.traverse((item) => {
+                        if (item.geometry) item.geometry.dispose();
+                        if (item.material) {
+                            if (Array.isArray(item.material)) item.material.forEach((mat) => mat.dispose());
+                            else item.material.dispose();
+                        }
+                    });
+                }
+            }
+
+            function addCylinderBetween(group, start, end, radius, material, radialSegments = 14) {
+                const delta = end.clone().sub(start);
+                const length = delta.length();
+                if (length <= 1e-9) return null;
+                const geometry = new THREE.CylinderGeometry(radius, radius, length, radialSegments, 1, false);
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(start).add(end).multiplyScalar(0.5);
+                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.clone().normalize());
+                group.add(mesh);
+                return mesh;
+            }
+
+            function registerTransportMesh(mesh, baseMaterial, role, extra = {}) {
+                if (!mesh) return null;
+                mesh.userData.kind = "transport";
+                mesh.userData.baseMaterial = baseMaterial;
+                mesh.userData.thermalMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 });
+                mesh.userData.transportRole = role;
+                Object.assign(mesh.userData, extra);
+                return mesh;
+            }
+
+            function busLocalToRoot(local) {
+                return local.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), BUS_VISUAL_ROTATION_Y);
+            }
+
+            function radiatorPoseData(s) {
+                const activeH = activeRadiatorHeightM(radiatorMassKgForTotal(state.massKg)) * s;
+                const activeW = activeRadiatorWidthM(radiatorMassKgForTotal(state.massKg)) * s;
+                const rootX = radiatorCenterZ(s);
+                const basis = new THREE.Matrix4().makeBasis(
+                    new THREE.Vector3(0, 0, 1),
+                    new THREE.Vector3(0, -1, 0),
+                    new THREE.Vector3(1, 0, 0)
+                );
+                const position = new THREE.Vector3(rootX - activeH * 0.5, 0, 0);
+                return { activeH, activeW, rootX, basis, position };
+            }
+
+            function radiatorLocalToRoot(local, s, pose = null) {
+                const p = pose || radiatorPoseData(s);
+                return local.clone().applyMatrix4(p.basis).add(p.position);
+            }
+
+            function buildSinkCoveragePoints(s, passes = 6) {
+                const footprint = sinkFootprintM();
+                const xMin = -footprint.x * 0.43 * s;
+                const xMax = footprint.x * 0.43 * s;
+                const yMin = -footprint.y * 0.40 * s;
+                const yMax = footprint.y * 0.40 * s;
+                const z = sinkBottomZ(s) - 0.008 * s;
+                const points = [];
+                for (let i = 0; i < passes; i++) {
+                    const u = i / Math.max(passes - 1, 1);
+                    const y = lerp(yMin, yMax, u);
+                    const from = busLocalToRoot(new THREE.Vector3(i % 2 === 0 ? xMin : xMax, y, z));
+                    const to = busLocalToRoot(new THREE.Vector3(i % 2 === 0 ? xMax : xMin, y, z));
+                    if (points.length === 0) points.push(from);
+                    else points.push(from);
+                    points.push(to);
+                }
+                return points;
+            }
+
+            function addTransportPolyline(group, points, radius, baseMaterial, role, t0 = 0, t1 = 1) {
+                const segCount = Math.max(points.length - 1, 1);
+                for (let i = 0; i < points.length - 1; i++) {
+                    const frac = segCount <= 1 ? 0.5 : i / (segCount - 1);
+                    const mesh = addCylinderBetween(group, points[i], points[i + 1], radius, baseMaterial);
+                    registerTransportMesh(mesh, baseMaterial, role, { pathFrac: lerp(t0, t1, frac) });
+                }
+            }
+
+            function radiatorSurfacePoint(s, pose, xFrac, y01, lift = 0.08) {
+                const rowWidth = radiatorRowWidthAt(y01, s);
+                const localX = clamp(xFrac, -0.49, 0.49) * rowWidth;
+                const localU = clamp(localX / Math.max(rowWidth, 1e-9) + 0.5, 0, 1);
+                const localY = radiatorThicknessMAt(localU, y01, state.massKg) * s * lift;
+                const localZ = pose.activeH * (0.5 - y01);
+                return radiatorLocalToRoot(new THREE.Vector3(localX, localY, localZ), s, pose);
+            }
+
+            function buildRadiatorSerpentinePoints(s, pose, passes = 11, yStart = 0.10, yEnd = 0.96, edgeInset = 0.045) {
+                const points = [];
+                for (let i = 0; i < passes; i++) {
+                    const y01 = lerp(yStart, yEnd, i / Math.max(passes - 1, 1));
+                    const left = -(0.5 - edgeInset);
+                    const right = 0.5 - edgeInset;
+                    const a = radiatorSurfacePoint(s, pose, i % 2 === 0 ? left : right, y01);
+                    const b = radiatorSurfacePoint(s, pose, i % 2 === 0 ? right : left, y01);
+                    if (points.length === 0) points.push(a);
+                    else points.push(a);
+                    points.push(b);
+                }
+                return points;
+            }
+
+            function buildRadiatorParallelHeatPipeLanes(s, pose, lanes = 6, yStart = 0.11, yEnd = 0.96) {
+                const out = [];
+                for (let i = 0; i < lanes; i++) {
+                    const xFrac = lerp(-0.455, 0.455, i / Math.max(lanes - 1, 1));
+                    out.push([
+                        radiatorSurfacePoint(s, pose, xFrac, yStart),
+                        radiatorSurfacePoint(s, pose, xFrac, yEnd)
+                    ]);
+                }
+                return out;
+            }
+
+            function registerCylinder(group, a, b, radius, material, role, pathFrac, segments = 14) {
+                return registerTransportMesh(addCylinderBetween(group, a, b, radius, material, segments), material, role, { pathFrac });
+            }
+
+            function rebuildTransportVisualGroup(group, s) {
+                if (!group) return;
+                clearVisualGroup(group);
+                const copperLineMat = new THREE.MeshStandardMaterial({ color: 0xd48645, roughness: 0.30, metalness: 0.84, emissive: 0x241006, emissiveIntensity: 0.06 });
+                const hotLineMat = new THREE.MeshStandardMaterial({ color: 0xff8a32, roughness: 0.34, metalness: 0.55, emissive: 0x351000, emissiveIntensity: 0.18 });
+                const coldLineMat = new THREE.MeshStandardMaterial({ color: 0x3db7ff, roughness: 0.32, metalness: 0.44, emissive: 0x031b2c, emissiveIntensity: 0.18 });
+                const darkMat = new THREE.MeshStandardMaterial({ color: 0x202629, roughness: 0.62, metalness: 0.25 });
+                const pose = radiatorPoseData(s);
+                const heatPipeR = HEAT_PIPE_RADIUS_M * s;
+                const coolantR = COOLANT_PIPE_RADIUS_M * s;
+                const sinkPoints = buildSinkCoveragePoints(s, 6);
+                const sinkFeed = sinkPoints[sinkPoints.length - 1];
+                const sinkReturn = sinkPoints[0];
+                const radiatorSerpentine = buildRadiatorSerpentinePoints(s, pose, 11, 0.10, 0.96, 0.045);
+
+                if (THERMAL_TRANSPORT_MODE === "passive") {
+                    // Passive copper mode is a conductive copper spreader/radiator.  The
+                    // full-face thermal spreading is modeled in exchangeSinkToRadiator(),
+                    // but no exposed pipe geometry is drawn because there is no separate
+                    // liquid or active transport loop in this version.
+                    return;
+                }
+
+                if (THERMAL_TRANSPORT_MODE === "liquidCoolant") {
+                    const hotPlatePts = sinkPoints;
+                    const coldPlatePts = sinkPoints.map((p, idx) => p.clone().add(new THREE.Vector3(0, (idx % 2 === 0 ? 1 : -1) * 0.0035 * s, 0)));
+                    addTransportPolyline(group, hotPlatePts, coolantR * 0.78, hotLineMat, "sinkPlateHot", 0.03, 0.16);
+                    addTransportPolyline(group, coldPlatePts, coolantR * 0.74, coldLineMat, "sinkPlateCold", 0.82, 0.96);
+                    registerCylinder(group, sinkFeed, radiatorSerpentine[0], coolantR * 0.84, hotLineMat, "hotLine", 0.18, 14);
+                    addTransportPolyline(group, radiatorSerpentine, coolantR * 0.64, hotLineMat, "radiatorLoop", 0.20, 0.78);
+                    registerCylinder(group, radiatorSerpentine[radiatorSerpentine.length - 1], sinkReturn, coolantR * 0.74, coldLineMat, "coldLine", 0.88, 14);
+                    return;
+                }
+
+                const compressor = new THREE.Mesh(new THREE.BoxGeometry(0.58 * s, 0.34 * s, 0.72 * s), darkMat);
+                compressor.position.copy(busLocalToRoot(new THREE.Vector3(0, -sinkFootprintM().y * 0.48 * s, sinkBottomZ(s) - 0.38 * s)));
+                group.add(compressor);
+                registerTransportMesh(compressor, darkMat, "compressor", { pathFrac: 0.5 });
+                addTransportPolyline(group, sinkPoints, heatPipeR * 0.60, coldLineMat, "sinkPlateCold", 0.86, 0.96);
+                registerCylinder(group, sinkFeed, compressor.position.clone(), heatPipeR * 0.54, coldLineMat, "coldLine", 0.92, 14);
+                registerCylinder(group, compressor.position.clone(), radiatorSerpentine[0], heatPipeR * 0.80, hotLineMat, "hotLine", 0.16, 14);
+                addTransportPolyline(group, radiatorSerpentine, heatPipeR * 0.64, hotLineMat, "radiatorLoop", 0.22, 0.78);
+            }
+
+            function addEdges(root, geometry, mat, position) {
+                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), mat);
+                edges.position.copy(position);
+                root.add(edges);
+            }
+
+            function addLights() {
+                scene.add(new THREE.AmbientLight(0x0d1417, 0.08));
+                const hemi = new THREE.HemisphereLight(0x9ec7d4, 0x020304, 0.12);
+                scene.add(hemi);
+                const sunLight = new THREE.DirectionalLight(0xffefd2, 2.8);
+                sunLight.target.position.set(0, 0, 0);
+                scene.add(sunLight);
+                scene.add(sunLight.target);
+                const rim = new THREE.DirectionalLight(0xd4eef7, 0.34);
+                rim.position.set(-14, 9, -10);
+                scene.add(rim);
+                scene.userData.sunLight = sunLight;
+            }
+
+            function addStars() {
+                const count = 2600;
+                const positions = new Float32Array(count * 3);
+                const colors = new Float32Array(count * 3);
+                for (let i = 0; i < count; i++) {
+                    const r = 18000 + Math.random() * 32000;
+                    const theta = Math.random() * TWO_PI;
+                    const u = Math.random() * 2 - 1;
+                    const root = Math.sqrt(1 - u * u);
+                    positions[i * 3] = Math.cos(theta) * root * r;
+                    positions[i * 3 + 1] = u * r;
+                    positions[i * 3 + 2] = Math.sin(theta) * root * r;
+                    const tone = 0.62 + Math.random() * 0.38;
+                    colors[i * 3] = tone;
+                    colors[i * 3 + 1] = tone * (0.92 + Math.random() * 0.08);
+                    colors[i * 3 + 2] = tone * (0.85 + Math.random() * 0.15);
+                }
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+                const stars = new THREE.Points(
+                    geometry,
+                    new THREE.PointsMaterial({
+                        size: 18,
+                        sizeAttenuation: true,
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: 0.84
+                    })
+                );
+                scene.add(stars);
+            }
+
+            function makeSoftSunGlowTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 512;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
+                glow.addColorStop(0.00, "rgba(255,255,255,1.0)");
+                glow.addColorStop(0.10, "rgba(255,255,244,0.95)");
+                glow.addColorStop(0.24, "rgba(255,231,184,0.46)");
+                glow.addColorStop(0.50, "rgba(255,177,106,0.15)");
+                glow.addColorStop(0.82, "rgba(255,142,80,0.035)");
+                glow.addColorStop(1.00, "rgba(255,142,80,0)");
+                ctx.fillStyle = glow;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                return texture;
+            }
+
+            function makeEarthShaderMaterial(dayMap) {
+                return new THREE.ShaderMaterial({
+                    uniforms: {
+                        dayMap: { value: dayMap },
+                        sunDirection: { value: new THREE.Vector3(1, 0, 0) }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        varying vec3 vNormalLocal;
+                        void main() {
+                            vUv = uv;
+                            vNormalLocal = normalize(normal);
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D dayMap;
+                        uniform vec3 sunDirection;
+                        varying vec2 vUv;
+                        varying vec3 vNormalLocal;
+                        void main() {
+                            vec3 tex = texture2D(dayMap, vUv).rgb;
+                            float ndl = dot(normalize(vNormalLocal), normalize(sunDirection));
+                            float day = smoothstep(-0.10, 0.22, ndl);
+                            float twilight = smoothstep(-0.34, 0.05, ndl) * (1.0 - day);
+                            vec3 night = tex * vec3(0.012, 0.018, 0.030);
+                            vec3 lit = tex * (0.34 + 1.18 * max(ndl, 0.0));
+                            lit += vec3(0.060, 0.090, 0.115) * twilight;
+                            vec3 color = mix(night, lit, day);
+                            gl_FragColor = vec4(color, 1.0);
+                        }
+                    `
+                });
+            }
+
+            function makeEarthTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                const ocean = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                ocean.addColorStop(0, "#214a66");
+                ocean.addColorStop(0.48, "#17384f");
+                ocean.addColorStop(1, "#102e45");
+                ctx.fillStyle = ocean;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                let seed = 42;
+                const rand = () => {
+                    seed = (seed * 1664525 + 1013904223) >>> 0;
+                    return seed / 4294967296;
+                };
+                const landColors = ["#507a57", "#6c875f", "#8b8358", "#536d50", "#967b52"];
+                for (let land = 0; land < 42; land++) {
+                    const cx = rand() * canvas.width;
+                    const cy = canvas.height * (0.16 + rand() * 0.68);
+                    const rx = 35 + rand() * 150;
+                    const ry = 18 + rand() * 70;
+                    ctx.beginPath();
+                    for (let p = 0; p < 28; p++) {
+                        const a = p / 28 * TWO_PI;
+                        const wobble = 0.68 + rand() * 0.64;
+                        const x = cx + Math.cos(a) * rx * wobble;
+                        const y = cy + Math.sin(a) * ry * wobble;
+                        if (p === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = landColors[Math.floor(rand() * landColors.length)];
+                    ctx.globalAlpha = 0.72;
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+
+                for (let i = 0; i < 800; i++) {
+                    const x = rand() * canvas.width;
+                    const y = rand() * canvas.height;
+                    const w = 8 + rand() * 48;
+                    const h = 2 + rand() * 9;
+                    ctx.fillStyle = `rgba(255,255,255,${0.025 + rand() * 0.07})`;
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, w, h, rand() * Math.PI, 0, TWO_PI);
+                    ctx.fill();
+                }
+
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                return texture;
+            }
+
+            function makeCloudTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let seed = 9;
+                const rand = () => {
+                    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+                    return seed / 0x80000000;
+                };
+                for (let band = 0; band < 10; band++) {
+                    const yBase = 42 + band * 46 + (rand() - 0.5) * 24;
+                    for (let i = 0; i < 80; i++) {
+                        const x = rand() * canvas.width;
+                        const y = yBase + (rand() - 0.5) * 36;
+                        const rx = 18 + rand() * 86;
+                        const ry = 4 + rand() * 18;
+                        ctx.fillStyle = `rgba(255,255,255,${0.05 + rand() * 0.18})`;
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, rx, ry, (rand() - 0.5) * 0.65, 0, TWO_PI);
+                        ctx.fill();
+                    }
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                return texture;
+            }
+
+            function orbitFrameAt(timeSec) {
+                const day = FALL_EQUINOX_DAY + timeSec / SOLAR_DAY;
+                const sunDir = sunDirectionForDay(day);
+                const physicalSunDir = sunDir.clone().normalize();
+                const orbit = orbitalState(timeSec);
+                const positionScene = orbit.positionKm.clone().multiplyScalar(KM_TO_SCENE);
+                const radial = positionScene.clone().normalize();
+                const xAxis = physicalSunDir.clone().normalize();
+                let zAxis = radial.clone().sub(xAxis.clone().multiplyScalar(radial.dot(xAxis)));
+                if (zAxis.lengthSq() < 1e-7) zAxis = new THREE.Vector3(0, 0, 1);
+                zAxis.normalize();
+                const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+                const env = environmentModel(physicalSunDir, radial, xAxis, yAxis, zAxis);
+                return { day, sunDir, physicalSunDir, orbit, positionScene, radial, xAxis, yAxis, zAxis, env };
+            }
+
+            function advanceSimulation(totalDt) {
+                const clamped = Math.max(0, Math.min(totalDt, SOLAR_DAY * 2));
+                if (!state.playing || clamped <= 1e-9) return;
+                state.simAccumulator = Math.min((state.simAccumulator || 0) + clamped, SOLAR_DAY * 2);
+                const dt = FIXED_SOLVER_STEP_S;
+                let didStep = false;
+                while (state.simAccumulator >= dt - 1e-12) {
+                    const envTime = state.orbiting ? state.orbitTime + dt * 0.5 : state.orbitTime;
+                    thermal.stepOnce(dt, orbitFrameAt(envTime).env);
+                    state.simTime += dt;
+                    if (state.orbiting) state.orbitTime += dt;
+                    state.simAccumulator -= dt;
+                    didStep = true;
+                }
+                if (didStep) thermal.updateAggregates();
+            }
+
+            function updateScene() {
+                const frame = orbitFrameAt(state.orbitTime);
+                const { physicalSunDir, orbit, positionScene, radial, xAxis, yAxis, zAxis, env } = frame;
+
+                const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+                sceneObjects.satellite.root.quaternion.setFromRotationMatrix(basis);
+                const satQuaternion = sceneObjects.satellite.root.quaternion.clone();
+                sceneObjects.satellite.root.position.set(0, 0, 0);
+                sceneObjects.satellite.root.scale.setScalar(1);
+                sceneObjects.earthGroup.position.copy(positionScene).multiplyScalar(-1);
+
+                const focus = chipFocusPoint().applyQuaternion(satQuaternion);
+                if (state.cameraDirty) {
+                    const offset = xAxis.clone().multiplyScalar(0.44)
+                        .add(yAxis.clone().multiplyScalar(0.78))
+                        .add(zAxis.clone().multiplyScalar(-0.30))
+                        .normalize()
+                        .multiplyScalar(state.cameraDistance);
+                    camera.position.copy(focus).add(offset);
+                    controls.target.copy(focus);
+                    controls.update();
+                    state.cameraDirty = false;
+                } else if (state.lastSatQuaternion) {
+                    const previousInverse = state.lastSatQuaternion.clone().invert();
+                    const localOffset = camera.position.clone().applyQuaternion(previousInverse);
+                    const localTarget = controls.target.clone().applyQuaternion(previousInverse);
+                    camera.position.copy(localOffset.applyQuaternion(satQuaternion));
+                    controls.target.copy(localTarget.applyQuaternion(satQuaternion));
+                }
+                camera.up.copy(new THREE.Vector3(0, 0, 1).applyQuaternion(satQuaternion).normalize());
+                state.lastSatQuaternion = satQuaternion;
+
+                sceneObjects.earthGroup.rotation.y = earthRotationAngle(state.orbitTime);
+                sceneObjects.clouds.rotation.y = earthRotationAngle(state.orbitTime * 0.84) + state.orbitTime * 0.000006;
+                if (sceneObjects.earth.material.uniforms && sceneObjects.earth.material.uniforms.sunDirection) {
+                    const earthLocalSun = physicalSunDir.clone().applyQuaternion(sceneObjects.earthGroup.quaternion.clone().invert()).normalize();
+                    sceneObjects.earth.material.uniforms.sunDirection.value.copy(earthLocalSun);
+                }
+
+                sceneObjects.sunGroup.position.copy(physicalSunDir).multiplyScalar(SUN_DISTANCE);
+                sceneObjects.sunLight.position.copy(physicalSunDir).multiplyScalar(SUN_DISTANCE * 0.6);
+                sceneObjects.sunLight.target.position.set(0, 0, 0);
+                sceneObjects.sunLight.target.updateMatrixWorld();
+
+                updateTerminator(sceneObjects.terminatorLine, physicalSunDir);
+                sceneObjects.terminatorLine.position.copy(sceneObjects.earthGroup.position);
+
+                updateVisualMode();
+                updateReadouts(orbit, env);
+            }
+
+            function sunlightVisibilityFactor(sunDir, radial) {
+                const rKm = EARTH_RADIUS_KM + ALTITUDE_KM;
+                const axisProjection = radial.dot(sunDir);
+                if (axisProjection >= 0) return 1;
+                const perpendicularKm = rKm * Math.sqrt(Math.max(0, 1 - axisProjection * axisProjection));
+                const penumbraKm = Math.max(8, rKm * SUN_ANGULAR_RADIUS_RAD);
+                return smoothstep(EARTH_RADIUS_KM - penumbraKm, EARTH_RADIUS_KM + penumbraKm, perpendicularKm);
+            }
+
+            function lambertPhaseFactor(cosPhase) {
+                const c = clamp(cosPhase, -1, 1);
+                const phase = Math.acos(c);
+                return clamp((Math.sin(phase) + (Math.PI - phase) * Math.cos(phase)) / Math.PI, 0, 1);
+            }
+
+            function diskViewFactorOneSided(cosCenter, halfAngleRad) {
+                const c = clamp(cosCenter, -1, 1);
+                const key = `${Math.round(c * 400)}`;
+                if (!diskViewFactorOneSided.cache) diskViewFactorOneSided.cache = {};
+                if (diskViewFactorOneSided.cache[key] !== undefined) return diskViewFactorOneSided.cache[key];
+                const tilt = Math.acos(c);
+                const sinTilt = Math.sin(tilt);
+                const cosTilt = Math.cos(tilt);
+                const thetaSteps = 18;
+                const phiSteps = 48;
+                let integral = 0;
+                for (let i = 0; i < thetaSteps; i++) {
+                    const theta = (i + 0.5) * halfAngleRad / thetaSteps;
+                    const sinTheta = Math.sin(theta);
+                    const cosTheta = Math.cos(theta);
+                    const dTheta = halfAngleRad / thetaSteps;
+                    for (let j = 0; j < phiSteps; j++) {
+                        const phi = (j + 0.5) * TWO_PI / phiSteps;
+                        const ndot = sinTilt * sinTheta * Math.cos(phi) + cosTilt * cosTheta;
+                        if (ndot > 0) integral += ndot * sinTheta * dTheta * (TWO_PI / phiSteps);
+                    }
+                }
+                const view = clamp(integral / Math.PI, 0, 1);
+                diskViewFactorOneSided.cache[key] = view;
+                return view;
+            }
+
+            function diskViewFactorTwoSided(cosCenter, halfAngleRad) {
+                return 0.5 * (diskViewFactorOneSided(cosCenter, halfAngleRad) + diskViewFactorOneSided(-cosCenter, halfAngleRad));
+            }
+
+            function environmentModel(sunDir, radial, sunAxis, radiatorNormal, localZAxis) {
+                const earthAngular = Math.asin(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + ALTITUDE_KM));
+                const earthDir = radial.clone().multiplyScalar(-1).normalize();
+                const sunVisibility = DAWN_DUSK_SSO_CONSTANT_SUN ? 1 : sunlightVisibilityFactor(sunDir, radial);
+                const directSunWm2 = SOLAR_CONSTANT * sunVisibility;
+                const sunLocal = new THREE.Vector3(
+                    sunDir.dot(sunAxis),
+                    sunDir.dot(radiatorNormal),
+                    sunDir.dot(localZAxis)
+                ).normalize();
+                const earthLocal = new THREE.Vector3(
+                    earthDir.dot(sunAxis),
+                    earthDir.dot(radiatorNormal),
+                    earthDir.dot(localZAxis)
+                ).normalize();
+                const radiatorEarthView = diskViewFactorTwoSided(earthLocal.y, earthAngular);
+                const panelFrontEarthView = diskViewFactorOneSided(earthLocal.x, earthAngular);
+                const panelBackEarthView = diskViewFactorOneSided(-earthLocal.x, earthAngular);
+                const radiatorFaceSunCos = Math.abs(sunLocal.y);
+                const radiatorEdgeSunCos = Math.abs(sunLocal.x) * RADIATOR_EDGE_SOLAR_DEPTH_M / RADIATOR_HEIGHT_M +
+                    Math.abs(sunLocal.z) * RADIATOR_EDGE_SOLAR_DEPTH_M / RADIATOR_WIDTH_M;
+                const radiatorSunCos = RADIATOR_DIRECT_SUN_EXPOSED && directSunWm2 > 0 ? clamp(radiatorFaceSunCos + radiatorEdgeSunCos, 0, 1) : 0;
+                const busSunProjectedArea = (BUS_Y_M * BUS_Z_M) * Math.max(0, sunLocal.x);
+                const busEarthProjectedArea =
+                    diskViewFactorOneSided(earthLocal.x, earthAngular) * BUS_Y_M * BUS_Z_M +
+                    diskViewFactorOneSided(-earthLocal.x, earthAngular) * BUS_Y_M * BUS_Z_M +
+                    diskViewFactorOneSided(earthLocal.y, earthAngular) * BUS_X_M * BUS_Z_M +
+                    diskViewFactorOneSided(-earthLocal.y, earthAngular) * BUS_X_M * BUS_Z_M +
+                    diskViewFactorOneSided(earthLocal.z, earthAngular) * BUS_X_M * BUS_Y_M +
+                    diskViewFactorOneSided(-earthLocal.z, earthAngular) * BUS_X_M * BUS_Y_M;
+                const albedoPhase = DAWN_DUSK_SSO_CONSTANT_SUN ? DAWN_DUSK_ALBEDO_PHASE_FACTOR : lambertPhaseFactor(radial.dot(sunDir));
+                return {
+                    directSunWm2,
+                    earthIrWm2: EARTH_IR_W_M2,
+                    albedoWm2: SOLAR_CONSTANT * EARTH_ALBEDO * albedoPhase,
+                    sunVisibility,
+                    earthAngular,
+                    sunLocal,
+                    panelSunCos: directSunWm2 > 0 ? 1 : 0,
+                    radiatorDirectSunWm2: RADIATOR_DIRECT_SUN_EXPOSED ? directSunWm2 : 0,
+                    panelFrontEarthView,
+                    panelBackEarthView,
+                    busSunProjectedArea,
+                    busEarthProjectedArea,
+                    radiatorSunCos: radiatorSunCos < 0.012 ? 0 : radiatorSunCos,
+                    radiatorEarthView,
+                    earthLocal
+                };
+            }
+
+            function busLocalDirection(rootLocalDirection) {
+                if (!rootLocalDirection) return new THREE.Vector3(0, 0, 1);
+                return rootLocalDirection.clone()
+                    .applyAxisAngle(new THREE.Vector3(0, 1, 0), -BUS_VISUAL_ROTATION_Y)
+                    .normalize();
+            }
+
+            function orbitalState(t) {
+                const a = EARTH_RADIUS_KM + ALTITUDE_KM;
+                const n = Math.sqrt(MU / Math.pow(a, 3));
+                const inc = sunSyncInclination(ALTITUDE_KM);
+                const raan = sunRightAscensionForDay(FALL_EQUINOX_DAY + t / SOLAR_DAY) - Math.PI / 2;
+                const u = 0.18 + n * t;
+                const positionKm = satellitePosition(a, inc, raan, u);
+                return { a, n, inc, raan, u, positionKm, periodSec: TWO_PI / n };
+            }
+
+            function satellitePosition(radius, inc, raan, u) {
+                const node = new THREE.Vector3(Math.cos(raan), 0, Math.sin(raan));
+                const q = new THREE.Vector3(
+                    Math.sin(raan) * Math.cos(inc),
+                    Math.sin(inc),
+                    -Math.cos(raan) * Math.cos(inc)
+                );
+                return node.multiplyScalar(Math.cos(u) * radius).add(q.multiplyScalar(Math.sin(u) * radius));
+            }
+
+            function sunSyncInclination(altKm) {
+                const a = EARTH_RADIUS_KM + altKm;
+                const n = Math.sqrt(MU / Math.pow(a, 3));
+                const factor = 1.5 * J2 * n * Math.pow(EARTH_RADIUS_KM / a, 2);
+                const cosI = clamp(-SUN_YEAR_RATE / factor, -1, 1);
+                return Math.acos(cosI);
+            }
+
+            function sunDirectionForDay(day) {
+                const eclipticLongitude = TWO_PI * ((day - VERNAL_EQUINOX_DAY) / YEAR_DAYS);
+                return new THREE.Vector3(
+                    Math.cos(eclipticLongitude),
+                    Math.sin(OBLIQUITY) * Math.sin(eclipticLongitude),
+                    Math.cos(OBLIQUITY) * Math.sin(eclipticLongitude)
+                ).normalize();
+            }
+
+            function sunRightAscensionForDay(day) {
+                const sun = sunDirectionForDay(day);
+                return Math.atan2(sun.z, sun.x);
+            }
+
+            function earthRotationAngle(timeSec) {
+                return -TWO_PI * (timeSec / SIDEREAL_DAY);
+            }
+
+            function updateTerminator(line, sunDir) {
+                const normal = sunDir.clone().normalize();
+                const ref = Math.abs(normal.y) < 0.92 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+                const a = new THREE.Vector3().crossVectors(ref, normal).normalize();
+                const b = new THREE.Vector3().crossVectors(normal, a).normalize();
+                const points = [];
+                for (let i = 0; i < 256; i++) {
+                    const t = i / 256 * TWO_PI;
+                    points.push(a.clone().multiplyScalar(Math.cos(t) * EARTH_SCENE_RADIUS * 1.006)
+                        .add(b.clone().multiplyScalar(Math.sin(t) * EARTH_SCENE_RADIUS * 1.006)));
+                }
+                line.geometry.dispose();
+                line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+            }
+
+            function updateVisualMode() {
+                const thermalMode = state.view === "thermal";
+                elements.legend.classList.toggle("hidden", !thermalMode || state.photoMode);
+                renderer.toneMapping = thermalMode ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = thermalMode ? 1.0 : 0.92;
+                updateThermalColorRange();
+
+                for (const mesh of sceneObjects.satellite.components) {
+                    const nodeName = mesh.userData.node;
+                    if (thermalMode) {
+                        mesh.material = mesh.userData.thermalMaterial;
+                        if (mesh.userData.kind === "sink") {
+                            mesh.material.color.set(0xffffff);
+                            updateSinkVertexColors(mesh);
+                        } else if (mesh.userData.kind === "bus") {
+                            mesh.material.color.set(0xffffff);
+                            updateBusVertexColors(mesh);
+                        } else {
+                            const base = mesh.userData.chipIndex !== undefined
+                                ? thermal.chips.t[mesh.userData.chipIndex]
+                                : thermal.nodes[nodeName] ? thermal.nodes[nodeName].t : K0 + 20;
+                            mesh.material.color.copy(colorForTemperature(base));
+                        }
+                    } else {
+                        mesh.material = mesh.userData.baseMaterial;
+                    }
+                }
+
+                const radiator = sceneObjects.satellite.radiatorColor.mesh;
+                radiator.material = thermalMode ? radiator.userData.thermalMaterial : radiator.userData.baseMaterial;
+                if (thermalMode) updateRadiatorVertexColors(radiator.geometry.attributes.color);
+                updateTransportThermalVisuals(thermalMode);
+            }
+
+            function updateSinkVertexColors(mesh) {
+                const colorAttr = mesh.geometry.attributes.color;
+                const position = mesh.geometry.attributes.position;
+                if (!colorAttr || !position) return;
+                const tempColor = new THREE.Color();
+                const footprint = sinkFootprintM();
+                const s = sceneScale();
+                const width = footprint.x * s;
+                const depth = footprint.y * s;
+                for (let i = 0; i < position.count; i++) {
+                    const worldX = position.getX(i) + mesh.position.x;
+                    const worldY = position.getY(i) + mesh.position.y;
+                    const x01 = clamp(worldX / Math.max(width, 1e-9) + 0.5, 0, 1);
+                    const y01 = clamp(worldY / Math.max(depth, 1e-9) + 0.5, 0, 1);
+                    tempColor.copy(colorForTemperature(sampleGrid(thermal.parts.sink, x01, y01)));
+                    colorAttr.setXYZ(i, tempColor.r, tempColor.g, tempColor.b);
+                }
+                colorAttr.needsUpdate = true;
+            }
+
+            function updateBusVertexColors(mesh) {
+                const colorAttr = mesh.geometry.attributes.color;
+                const position = mesh.geometry.attributes.position;
+                if (!colorAttr || !position) return;
+                const tempColor = new THREE.Color();
+                const s = sceneScale();
+                const width = BUS_X_M * s;
+                const height = BUS_Y_M * s;
+                const depth = BUS_Z_M * s;
+                for (let i = 0; i < position.count; i++) {
+                    const x = position.getX(i);
+                    const y = position.getY(i);
+                    const z = position.getZ(i);
+                    tempColor.copy(colorForTemperature(busVisualTemperatureAt(x, y, z, width, height, depth)));
+                    colorAttr.setXYZ(i, tempColor.r, tempColor.g, tempColor.b);
+                }
+                colorAttr.needsUpdate = true;
+            }
+
+            function busVisualTemperatureAt(x, y, z, width, height, depth) {
+                const ax = Math.abs(x / Math.max(width * 0.5, 1e-9));
+                const ay = Math.abs(y / Math.max(height * 0.5, 1e-9));
+                const az = Math.abs(z / Math.max(depth * 0.5, 1e-9));
+                let normal = new THREE.Vector3(0, 0, 1);
+                let u01 = 0.5;
+                let v01 = 0.5;
+                if (az >= ax && az >= ay) {
+                    normal.set(0, 0, Math.sign(z) || 1);
+                    u01 = clamp(x / Math.max(width, 1e-9) + 0.5, 0, 1);
+                    v01 = clamp(y / Math.max(height, 1e-9) + 0.5, 0, 1);
+                } else if (ax >= ay) {
+                    normal.set(Math.sign(x) || 1, 0, 0);
+                    u01 = clamp(z / Math.max(depth, 1e-9) + 0.5, 0, 1);
+                    v01 = clamp(y / Math.max(height, 1e-9) + 0.5, 0, 1);
+                } else {
+                    normal.set(0, Math.sign(y) || 1, 0);
+                    u01 = clamp(x / Math.max(width, 1e-9) + 0.5, 0, 1);
+                    v01 = clamp(z / Math.max(depth, 1e-9) + 0.5, 0, 1);
+                }
+                const sun = thermal.last.busSunLocal || new THREE.Vector3(0, 0, 1);
+                const earth = thermal.last.busEarthLocal || new THREE.Vector3(0, 0, -1);
+                const base = sampleGrid(thermal.parts.bus, u01, v01);
+                const sunBoostK = 28 * Math.max(0, normal.dot(sun));
+                const earthBoostK = 14 * diskViewFactorOneSided(normal.dot(earth), thermal.last.busEarthAngular || 0);
+                const sinkDelta = Math.max(0, thermal.nodes.sink.t - thermal.nodes.bus.t);
+                const hotspot = Math.exp(-(((u01 - 0.5) * 3.4) ** 2 + ((v01 - 0.5) * 2.8) ** 2));
+                const sinkBoostK = normal.z < -0.9 ? sinkDelta * 0.92 * hotspot : sinkDelta * 0.08 * hotspot;
+                const faceBias = (normal.z > 0.9 ? 0.8 : 0) - (normal.z < -0.9 ? 0.4 : 0);
+                return clamp(base + sunBoostK + earthBoostK + sinkBoostK + faceBias, SPACE_TEMP_K, K0 + 520);
+            }
+
+            function transportTemperatureForMesh(mesh) {
+                const role = mesh.userData.transportRole || "passiveLink";
+                const frac = clamp(mesh.userData.pathFrac ?? 0.5, 0, 1);
+                if (role === "sinkPlate" || role === "sinkPlateHot" || role === "sinkPlateCold") {
+                    return lerp(thermal.nodes.sink.t, thermal.nodes.chipCenter.t, role === "sinkPlateCold" ? 0.22 : 0.32);
+                }
+                if (role === "passiveLink") return lerp(thermal.nodes.sink.t, thermal.nodes.radNear.t, frac);
+                if (role === "radiatorHeader") return lerp(thermal.nodes.radNear.t, thermal.nodes.radCenter.t, frac * 0.35);
+                if (role === "radiatorLoop") {
+                    const hot = THERMAL_TRANSPORT_MODE === "passive" ? thermal.nodes.radNear.t : Math.max(thermal.last.coolantHotK || thermal.nodes.radNear.t, thermal.nodes.radNear.t);
+                    const cold = THERMAL_TRANSPORT_MODE === "heatPump" ? thermal.nodes.radCenter.t : (thermal.last.coolantColdK || thermal.nodes.radFar.t);
+                    return lerp(hot, cold, frac);
+                }
+                if (role === "hotLine") return lerp(Math.max(thermal.last.coolantHotK || thermal.nodes.radNear.t, thermal.nodes.sink.t), thermal.nodes.radNear.t, frac * 0.5);
+                if (role === "coldLine") return lerp(thermal.last.coolantColdK || thermal.nodes.sink.t, thermal.nodes.sink.t, 0.25 + frac * 0.35);
+                if (role === "compressor") return clamp(0.5 * (thermal.last.coolantHotK + thermal.last.coolantColdK) + thermal.last.pumpPowerW / 1200, SPACE_TEMP_K, K0 + 520);
+                return thermal.nodes.trunk.t;
+            }
+
+            function updateTransportThermalVisuals(thermalMode) {
+                const group = sceneObjects && sceneObjects.satellite ? sceneObjects.satellite.transportGroup : null;
+                if (!group) return;
+                group.traverse((obj) => {
+                    if (!obj.isMesh || obj.userData.kind !== "transport") return;
+                    obj.material = thermalMode ? obj.userData.thermalMaterial : obj.userData.baseMaterial;
+                    if (thermalMode) obj.material.color.copy(colorForTemperature(transportTemperatureForMesh(obj)));
+                });
+            }
+
+            function updateRadiatorVertexColors(colorAttr) {
+                const position = sceneObjects.satellite.radiatorColor.mesh.geometry.attributes.position;
+                const tempColor = new THREE.Color();
+                const height = activeRadiatorHeightM(radiatorMassKgForTotal(state.massKg)) * sceneScale();
+                const s = sceneScale();
+                for (let i = 0; i < position.count; i++) {
+                    const z = position.getZ(i);
+                    const y01 = clamp((height * 0.5 - z) / Math.max(height, 1e-9), 0, 1);
+                    const rowWidth = radiatorRowWidthAt(y01, s);
+                    const x01 = clamp((position.getX(i) / Math.max(rowWidth, 1e-9)) + 0.5, 0, 1);
+                    const t = sampleGrid(thermal.parts.radiator, x01, y01);
+                    tempColor.copy(colorForTemperature(t));
+                    colorAttr.setXYZ(i, tempColor.r, tempColor.g, tempColor.b);
+                }
+                colorAttr.needsUpdate = true;
+            }
+
+            function thermalVoxelTemperatures() {
+                const n = thermal.nodes;
+                const temps = [
+                    n.chipCenter.t,
+                    n.chipEdge.t,
+                    n.sink.t,
+                    n.trunk.t,
+                    n.bus.t,
+                    n.panelFront.t,
+                    n.panelBack.t,
+                    n.radNear.t,
+                    n.radCenter.t,
+                    n.radFar.t
+                ];
+                for (const key of Object.keys(thermal.parts)) {
+                    const t = thermal.parts[key].t;
+                    for (let i = 0; i < t.length; i += Math.max(1, Math.floor(t.length / 900))) temps.push(t[i]);
+                }
+                for (let i = 0; i < thermal.chips.count; i++) temps.push(thermal.chips.t[i]);
+                return temps.filter(Number.isFinite);
+            }
+
+            function updateThermalColorRange() {
+                thermalColorRange.min = THERMAL_VIEW_MIN_K;
+                thermalColorRange.max = THERMAL_VIEW_MAX_K;
+                for (let i = 0; i < elements.legendTicks.length; i++) {
+                    const t = i / Math.max(elements.legendTicks.length - 1, 1);
+                    const k = lerp(THERMAL_VIEW_MAX_K, THERMAL_VIEW_MIN_K, t);
+                    elements.legendTicks[i].textContent = i === 0 ? `>${formatTemp(k)}` : formatTemp(k);
+                }
+            }
+
+            function colorForTemperature(kelvin) {
+                const normalized = clamp((kelvin - thermalColorRange.min) / Math.max(thermalColorRange.max - thermalColorRange.min, 1e-6), 0, 1);
+                const stops = [
+                    { t: 0.00, color: new THREE.Color(0x000063) },
+                    { t: 0.16, color: new THREE.Color(0x0048ff) },
+                    { t: 0.30, color: new THREE.Color(0x00d8ff) },
+                    { t: 0.46, color: new THREE.Color(0x00e85b) },
+                    { t: 0.62, color: new THREE.Color(0xffff00) },
+                    { t: 0.78, color: new THREE.Color(0xff8c00) },
+                    { t: 0.92, color: new THREE.Color(0xff0000) },
+                    { t: 1.00, color: new THREE.Color(0x5a0000) }
+                ];
+                for (let i = 1; i < stops.length; i++) {
+                    const a = stops[i - 1];
+                    const b = stops[i];
+                    if (normalized <= b.t) {
+                        const t = clamp((normalized - a.t) / Math.max(b.t - a.t, 1e-6), 0, 1);
+                        return a.color.clone().lerp(b.color, t);
+                    }
+                }
+                return stops[stops.length - 1].color.clone();
+            }
+
+            function updateReadouts(orbit, env) {
+                const nodes = thermal.nodes;
+                const radAvg = (
+                    nodes.radNear.t * thermal.variant.radNearMass +
+                    nodes.radCenter.t * thermal.variant.radCenterMass +
+                    nodes.radFar.t * thermal.variant.radFarMass
+                ) / Math.max(thermal.variant.radiatorMass, 1);
+                const thermalLoad = COMPUTE_POWER_W + thermal.last.pumpPowerW;
+                const heatDelta = thermal.last.radiatorRejectedW - thermalLoad - thermal.last.radiatorAbsorbedW;
+                const equilibrium = clamp(1 - Math.abs(heatDelta) / Math.max(thermalLoad, 1), 0, 1);
+                updateThermalColorRange();
+
+                elements.metricTime.textContent = formatTimeSpan(state.simTime);
+                elements.metricChipCenter.textContent = formatTemp(nodes.chipCenter.t);
+                elements.metricChipEdge.textContent = formatTemp(nodes.chipEdge.t);
+                elements.metricSink.textContent = formatTemp(nodes.sink.t);
+                elements.metricBus.textContent = formatTemp(nodes.bus.t);
+                elements.metricBus.title = `Direct bus solar absorption ${formatWatts(thermal.last.busSunAbsorbedW)}, Earth IR ${formatWatts(thermal.last.busIrAbsorbedW)}, albedo ${formatWatts(thermal.last.busAlbedoAbsorbedW)}. Bus directions are rotated into the visual bus frame before applying flux.`;
+                elements.metricRadNear.textContent = formatTemp(nodes.radNear.t);
+                elements.metricRadCenter.textContent = formatTemp(nodes.radCenter.t);
+                elements.metricRadFar.textContent = formatTemp(nodes.radFar.t);
+                elements.metricPvFace.textContent = formatTemp(nodes.panelFront.t);
+                elements.metricPanelBack.textContent = formatTemp(nodes.panelBack.t);
+                elements.metricPv.textContent = formatWatts(thermal.last.pvElectricW);
+                const pvMargin = thermal.last.pvElectricW - thermalLoad;
+                elements.metricPv.title = `PV output uses a cost-optimized space-PV temperature derate: ${(thermal.last.pvTempFactor * 100).toFixed(1)}% of the 25 C reference efficiency. Electrical margin after compute and transport: ${formatWatts(pvMargin)}.`;
+                if (THERMAL_TRANSPORT_MODE === "heatPump") {
+                    elements.metricSun.textContent = `${formatWatts(thermal.last.transportHeatW)} · COP ${thermal.last.transportCop.toFixed(1)}`;
+                } else if (THERMAL_TRANSPORT_MODE === "liquidCoolant") {
+                    elements.metricSun.textContent = `${formatWatts(thermal.last.transportHeatW)} · ${formatTemp(thermal.last.coolantHotK)}/${formatTemp(thermal.last.coolantColdK)}`;
+                } else {
+                    elements.metricSun.textContent = `${formatWatts(thermal.last.transportHeatW)} passive`;
+                }
+                elements.metricSun.title = `Transport pump power ${formatWatts(thermal.last.pumpPowerW)}. Radiator direct sun is forced off in the dawn-dusk SSO assumption (${(thermal.last.radiatorSunCos * 100).toFixed(1)}% incidence). Net heat balance ${formatWatts(thermal.last.netW)}, equilibrium ${Math.round(equilibrium * 100)}%, radiator average ${formatTemp(radAvg)}.`;
+                elements.playState.textContent = state.playing ? `Running ${SPEEDS[state.speedIndex].label}` : "Paused";
+                elements.playBtn.classList.toggle("active", state.playing);
+                elements.pauseBtn.classList.toggle("active", !state.playing);
+                elements.orbitBtn.classList.toggle("active", state.orbiting);
+
+                elements.envSun.textContent = `${env.directSunWm2.toFixed(0)} W/m2`;
+                elements.envIr.textContent = `${(env.earthIrWm2 * env.radiatorEarthView).toFixed(1)} W/m2`;
+                elements.envAlbedo.textContent = `${(env.albedoWm2 * env.radiatorEarthView).toFixed(1)} W/m2`;
+            }
+
+            function updateStaticReadouts() {
+                elements.envSpan.textContent = `${SOLAR_ARRAY_SPAN_M.toFixed(1)} m`;
+                elements.envChipArea.textContent = `${(CHIP_SILICON_AREA_M2 * 1e6).toFixed(0)} mm2`;
+                elements.envRadArea.textContent = `${thermal.variant.activeRadiatorEmitAreaM2.toFixed(0)} m2 emit`;
+            }
+
+            function updateVariantReadouts() {
+                const variant = thermal.variant;
+                elements.summaryCenter.textContent = `${(variant.topRadiatorThicknessM * 1000).toFixed(3)} mm`;
+                elements.summaryEdge.textContent = `${(variant.edgeRadiatorThicknessM * 1000).toFixed(3)} mm`;
+                elements.summarySinkMass.textContent = `${variant.sinkMass.toFixed(1)} kg`;
+                elements.summaryRadMass.textContent = `${variant.radiatorMass.toFixed(1)} kg · ${(variant.radiatorAreaUtilization * 100).toFixed(0)}% active`;
+                elements.summaryTransportMass.textContent = `${variant.transportMass.toFixed(1)} kg`;
+                elements.summaryActiveArea.textContent = `${variant.activeRadiatorWidthM.toFixed(1)} m × ${variant.activeRadiatorHeightM.toFixed(1)} m`;
+                elements.envRadArea.textContent = `${variant.activeRadiatorEmitAreaM2.toFixed(0)} m2 emit`;
+            }
+
+            function setPhotoMode(active) {
+                state.photoMode = Boolean(active);
+                document.body.classList.toggle("photo-mode", state.photoMode);
+                updateVisualMode();
+            }
+
+            function bindControls() {
+                document.querySelectorAll("[data-view]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        state.view = button.dataset.view;
+                        document.querySelectorAll("[data-view]").forEach((peer) => peer.classList.toggle("active", peer === button));
+                    });
+                });
+                document.querySelectorAll("[data-mass]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        state.massKg = Number(button.dataset.mass);
+                        document.querySelectorAll("[data-mass]").forEach((peer) => peer.classList.toggle("active", peer === button));
+                        thermal.reset(state.massKg);
+                        state.simAccumulator = 0;
+                        updateMassGeometry();
+                        rebuildRadiatorGeometry();
+                        updateVariantReadouts();
+                    });
+                });
+                elements.playBtn.addEventListener("click", () => { state.playing = true; });
+                elements.pauseBtn.addEventListener("click", () => { state.playing = false; });
+                elements.resetBtn.addEventListener("click", () => {
+                    state.simTime = 0;
+                    state.orbitTime = 0;
+                    state.cameraDirty = true;
+                    thermal.reset(state.massKg);
+                    state.simAccumulator = 0;
+                    updateVariantReadouts();
+                });
+                elements.orbitBtn.addEventListener("click", () => {
+                    state.orbiting = !state.orbiting;
+                });
+                elements.speedSlider.addEventListener("input", () => {
+                    state.speedIndex = clamp(Math.round(Number(elements.speedSlider.value)), 0, SPEEDS.length - 1);
+                    elements.speedSlider.value = state.speedIndex;
+                    elements.speedLabel.textContent = SPEEDS[state.speedIndex].label;
+                });
+                elements.scaleSlider.addEventListener("input", () => {
+                    state.cameraDistance = cameraDistanceFromZoom(Number(elements.scaleSlider.value));
+                    const fromTarget = camera.position.clone().sub(controls.target);
+                    const direction = fromTarget.lengthSq() > 1e-9
+                        ? fromTarget.normalize()
+                        : new THREE.Vector3(0.8, 0.42, 0.28).normalize();
+                    camera.position.copy(controls.target).add(direction.multiplyScalar(state.cameraDistance));
+                    elements.scaleLabel.textContent = formatDistance(state.cameraDistance);
+                });
+                window.addEventListener("keydown", (event) => {
+                    const target = event.target;
+                    const tag = target && target.tagName ? target.tagName.toLowerCase() : "";
+                    if (target && (target.isContentEditable || tag === "input" || tag === "textarea" || tag === "select")) return;
+                    if (event.key && event.key.toLowerCase() === "p" && !event.repeat) {
+                        event.preventDefault();
+                        setPhotoMode(!state.photoMode);
+                    }
+                });
+                elements.speedLabel.textContent = SPEEDS[state.speedIndex].label;
+                state.cameraDistance = cameraDistanceFromZoom(Number(elements.scaleSlider.value));
+                elements.scaleLabel.textContent = formatDistance(state.cameraDistance);
+            }
+
+            function rebuildRadiatorGeometry() {
+                const s = sceneScale();
+                const radiator = sceneObjects.satellite.radiatorColor.mesh;
+                radiator.geometry.dispose();
+                const replacement = makeTaperedRadiatorGeometry(s);
+                radiator.geometry = replacement.geometry;
+                applyRadiatorPose(radiator, s);
+                sceneObjects.satellite.radiatorColor.colorAttribute = replacement.colorAttribute;
+                sceneObjects.satellite.radiatorEdges.geometry.dispose();
+                sceneObjects.satellite.radiatorEdges.geometry = new THREE.EdgesGeometry(radiator.geometry);
+                sceneObjects.satellite.radiatorEdges.position.copy(radiator.position);
+                sceneObjects.satellite.radiatorEdges.quaternion.copy(radiator.quaternion);
+                rebuildTransportVisualGroup(sceneObjects.satellite.transportGroup, s);
+            }
+
+            function updateMassGeometry() {
+                const s = sceneScale();
+                const sat = sceneObjects.satellite;
+                sat.computeDeck.geometry.dispose();
+                sat.computeDeck.geometry = makeSinkPlateGeometry(s);
+                sat.computeDeck.rotation.set(0, 0, 0);
+                sat.computeDeck.position.set(0, 0, sinkCenterZ(s));
+                sat.sinkCrossX.geometry.dispose();
+                sat.sinkCrossX.geometry = makeCrossBarGeometry("x", s);
+                sat.sinkCrossX.rotation.set(0, 0, 0);
+                sat.sinkCrossX.position.set(0, 0, crossCenterZ(s));
+                sat.sinkCrossY.geometry.dispose();
+                sat.sinkCrossY.geometry = makeCrossBarGeometry("y", s);
+                sat.sinkCrossY.rotation.set(0, 0, 0);
+                sat.sinkCrossY.position.set(0, 0, crossCenterZ(s));
+                for (let i = 0; i < sat.chipMeshes.length; i++) {
+                    sat.chipMeshes[i].position.copy(chipPositionForIndex(i, s));
+                }
+                applyRadiatorPose(sat.radiatorColor.mesh, s);
+                sat.radiatorEdges.position.copy(sat.radiatorColor.mesh.position);
+                sat.radiatorEdges.quaternion.copy(sat.radiatorColor.mesh.quaternion);
+                rebuildTransportVisualGroup(sat.transportGroup, s);
+            }
+
+            function sceneScale() {
+                return METER_TO_SCENE_BASE;
+            }
+
+            function chipFocusPoint() {
+                const s = sceneScale();
+                return new THREE.Vector3(0, 0, sinkBottomZ(s) - CHIP_PACKAGE_THICKNESS_M * s * 0.5)
+                    .applyAxisAngle(new THREE.Vector3(0, 1, 0), BUS_VISUAL_ROTATION_Y);
+            }
+
+            function cameraDistanceFromZoom(value) {
+                return 0.003 * Math.pow(1000, clamp(Number(value), 0, 100) / 100);
+            }
+
+            function animate(now) {
+                try {
+                    const frameDt = Math.min((now - lastFrame) / 1000, MAX_FRAME_DT_S);
+                    lastFrame = now;
+                    const speed = SPEEDS[state.speedIndex].value;
+                    const simDt = state.playing ? frameDt * speed : 0;
+                    advanceSimulation(simDt);
+                    updateScene();
+                    controls.update();
+                    renderer.render(scene, camera);
+                } catch (error) {
+                    showError(error);
+                }
+                requestAnimationFrame(animate);
+            }
+
+            function syncHudLayout() {
+                const railHeight = elements.controlRail ? Math.ceil(elements.controlRail.getBoundingClientRect().height) : 0;
+                const clearance = railHeight + 16;
+                document.documentElement.style.setProperty("--hud-clearance", `${clearance}px`);
+                if (elements.view) elements.view.style.inset = `0 0 ${clearance}px 0`;
+            }
+
+            function resize() {
+                syncHudLayout();
+                const rect = elements.canvas.getBoundingClientRect();
+                const width = Math.max(1, Math.floor(rect.width));
+                const height = Math.max(1, Math.floor(rect.height));
+                renderer.setSize(width, height, false);
+                camera.aspect = width / Math.max(height, 1);
+                camera.updateProjectionMatrix();
+            }
+
+            function formatTemp(kelvin) {
+                const c = kelvin - K0;
+                if (c <= -10 || c >= 100) return `${c.toFixed(0)} C`;
+                return `${c.toFixed(1)} C`;
+            }
+
+            function formatWatts(watts) {
+                const abs = Math.abs(watts);
+                const sign = watts < 0 ? "-" : "";
+                if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2)} MW`;
+                if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(1)} kW`;
+                return `${sign}${abs.toFixed(0)} W`;
+            }
+
+            function formatDistance(km) {
+                if (km < 1) return `${Math.round(km * 1000)} m`;
+                return `${km.toFixed(2)} km`;
+            }
+
+            function formatTimeSpan(seconds) {
+                const s = Math.max(0, seconds);
+                if (s < 3600) return `${(s / 60).toFixed(1)} min`;
+                if (s < 86400) return `${(s / 3600).toFixed(2)} hr`;
+                return `${(s / 86400).toFixed(2)} days`;
+            }
+
+            function clamp(value, min, max) {
+                return Math.min(max, Math.max(min, value));
+            }
+
+            function clampIndex(value, min, max) {
+                return Math.min(max, Math.max(min, Math.round(value)));
+            }
+
+            function lerp(a, b, t) {
+                return a + (b - a) * clamp(t, 0, 1);
+            }
+
+            function smoothstep(edge0, edge1, value) {
+                const t = clamp((value - edge0) / Math.max(edge1 - edge0, 1e-9), 0, 1);
+                return t * t * (3 - 2 * t);
+            }
+
+            function showError(error) {
+                elements.errorLog.style.display = "block";
+                elements.errorLog.textContent += `${error.message || error}\n${error.stack || ""}\n`;
+            }
+        })();
+    </script>
+</body>
+
+</html>

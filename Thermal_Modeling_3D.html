@@ -1,0 +1,2896 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermal Heat Transfer Model</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #171717;
+            --panel: rgba(8, 13, 24, 0.92);
+            --panel-2: rgba(15, 22, 35, 0.92);
+            --line: rgba(103, 143, 184, 0.22);
+            --line-strong: rgba(103, 173, 231, 0.48);
+            --text: #d8e6f5;
+            --muted: #7f95ad;
+            --blue: #49a7ff;
+            --cyan: #45e4ff;
+            --green: #46e8a2;
+            --yellow: #f2d64a;
+            --orange: #ff9f3e;
+            --danger: #ff6c73;
+            --rail-height: 236px;
+            --hud-edge: clamp(16px, 0.73vw, 28px);
+            --hud-radius: clamp(9px, 0.42vw, 16px);
+            --hud-pad-x: clamp(13px, 0.63vw, 24px);
+            --hud-pad-y: clamp(11px, 0.53vw, 20px);
+            --readout-width: clamp(480px, 24vw, 860px);
+            --readout-title: clamp(16px, 0.73vw, 28px);
+            --readout-status: clamp(10px, 0.47vw, 18px);
+            --metric-label-size: clamp(9px, 0.42vw, 16px);
+            --metric-value-size: clamp(14px, 0.63vw, 24px);
+            --legend-width: clamp(98px, 4.6vw, 176px);
+            --legend-height: clamp(265px, 12.3vw, 472px);
+            --legend-ramp-width: clamp(20px, 0.94vw, 36px);
+            --legend-body-offset: clamp(42px, 2.65vw, 100px);
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            letter-spacing: 0;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        #app {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #171717;
+        }
+
+        #simulation {
+            position: absolute;
+            inset: 0 0 var(--rail-height) 0;
+            overflow: hidden;
+        }
+
+        #thermal-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #thermal-canvas:active {
+            cursor: grabbing;
+        }
+
+        #top-readout {
+            position: absolute;
+            top: var(--hud-edge);
+            left: var(--hud-edge);
+            z-index: 10;
+            width: min(var(--readout-width), calc(100vw - 28px));
+            background: rgba(5, 9, 17, 0.78);
+            border: 1px solid var(--line);
+            border-radius: var(--hud-radius);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            overflow: hidden;
+        }
+
+        .readout-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--hud-pad-x);
+            padding: var(--hud-pad-y) var(--hud-pad-x) calc(var(--hud-pad-y) * 0.82);
+            border-bottom: 1px solid var(--line);
+        }
+
+        h1 {
+            font-size: var(--readout-title);
+            line-height: 1.15;
+            color: #f1f6ff;
+            font-weight: 750;
+        }
+
+        .readout-head span {
+            font-size: var(--readout-status);
+            color: var(--green);
+            text-transform: uppercase;
+            letter-spacing: clamp(1px, 0.06vw, 2px);
+            white-space: nowrap;
+        }
+
+        #metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1px;
+            background: rgba(103, 143, 184, 0.12);
+        }
+
+        .metric.is-hidden {
+            display: none;
+        }
+
+        .metric {
+            min-width: 0;
+            background: rgba(8, 13, 24, 0.82);
+            padding: calc(var(--hud-pad-y) * 0.82) calc(var(--hud-pad-x) * 0.78);
+        }
+
+        .metric .label {
+            display: block;
+            margin-bottom: clamp(3px, 0.16vw, 6px);
+            color: #67819c;
+            font-size: var(--metric-label-size);
+            line-height: 1;
+            text-transform: uppercase;
+            letter-spacing: clamp(0.8px, 0.05vw, 1.8px);
+        }
+
+        .metric .value {
+            display: block;
+            color: #eaf4ff;
+            font-size: var(--metric-value-size);
+            line-height: 1.2;
+            font-weight: 750;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #legend {
+            position: absolute;
+            right: var(--hud-edge);
+            top: var(--hud-edge);
+            z-index: 12;
+            width: var(--legend-width);
+            height: var(--legend-height);
+            background: rgba(5, 9, 17, 0.78);
+            border: 1px solid var(--line);
+            border-radius: var(--hud-radius);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            padding: var(--hud-pad-y);
+        }
+
+        .legend-label {
+            color: #76a5d6;
+            font-size: var(--metric-label-size);
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: clamp(1px, 0.06vw, 2px);
+            text-align: center;
+            margin-bottom: calc(var(--hud-pad-y) * 0.82);
+        }
+
+        .legend-body {
+            display: grid;
+            grid-template-columns: var(--legend-ramp-width) 1fr;
+            gap: clamp(8px, 0.42vw, 16px);
+            height: calc(100% - var(--legend-body-offset));
+        }
+
+        .legend-ramp {
+            width: var(--legend-ramp-width);
+            height: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: clamp(5px, 0.26vw, 10px);
+            background: linear-gradient(180deg, #5a0000 0%, #ff0000 18%, #ff8c00 32%, #ffff00 47%, #00e85b 61%, #00d8ff 74%, #0048ff 88%, #000063 100%);
+            box-shadow: 0 0 20px rgba(255, 28, 0, 0.16), 0 0 16px rgba(0, 120, 255, 0.10);
+        }
+
+        .legend-ticks {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-width: 0;
+            color: #b8cbe0;
+            font-size: var(--readout-status);
+            line-height: 1;
+            font-weight: 750;
+            text-align: left;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #scenario-badge {
+            display: none;
+            position: absolute;
+            left: 16px;
+            bottom: calc(var(--rail-height) + 16px);
+            z-index: 11;
+            width: min(440px, calc(100vw - 32px));
+            background: rgba(5, 9, 17, 0.72);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+            padding: 10px 12px;
+        }
+
+        #scenario-badge strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #f1f6ff;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        #scenario-badge span {
+            color: #87a4be;
+            font-size: 10px;
+            line-height: 1.35;
+        }
+
+        #control-rail {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 20;
+            display: grid;
+            grid-template-columns: minmax(230px, 0.8fr) minmax(360px, 1.25fr) minmax(420px, 1.45fr) minmax(300px, 1fr);
+            gap: 10px;
+            min-height: 214px;
+            padding: 10px 12px 12px;
+            background: linear-gradient(180deg, rgba(3, 5, 9, 0.58), rgba(3, 5, 9, 0.96));
+            border-top: 1px solid var(--line);
+            backdrop-filter: blur(16px);
+            box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.44);
+        }
+
+        .control-section {
+            min-width: 0;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 9px;
+            overflow: hidden;
+        }
+
+        .control-section h2 {
+            margin-bottom: 8px;
+            color: #7fb5e9;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 1.15px;
+        }
+
+        .scenario-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+
+        .toggle-btn,
+        .play-btn,
+        .mini-btn {
+            border: 1px solid rgba(103, 143, 184, 0.28);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.035);
+            color: #b7cadc;
+            min-height: 30px;
+            padding: 0 9px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color 0.16s, background 0.16s, color 0.16s, box-shadow 0.16s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .toggle-btn:hover,
+        .play-btn:hover,
+        .mini-btn:hover {
+            border-color: var(--line-strong);
+            color: #eef8ff;
+        }
+
+        .toggle-btn.active,
+        .play-btn.active {
+            border-color: rgba(70, 232, 162, 0.66);
+            background: rgba(70, 232, 162, 0.12);
+            color: var(--green);
+            box-shadow: 0 0 18px rgba(70, 232, 162, 0.08);
+        }
+
+        .playback,
+        .settings {
+            display: grid;
+            gap: 9px;
+        }
+
+        .timeline-row {
+            display: grid;
+            grid-template-columns: 78px minmax(0, 1fr) 82px;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .timeline-row label,
+        .summary-label {
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 750;
+            text-transform: uppercase;
+            letter-spacing: 0.55px;
+        }
+
+        .range-wrap {
+            position: relative;
+            min-width: 0;
+            padding: 8px 0 8px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--blue);
+            cursor: pointer;
+        }
+
+        .value-pill,
+        .numeric-input {
+            height: 28px;
+            min-width: 0;
+            border: 1px solid rgba(103, 143, 184, 0.26);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #edf7ff;
+            padding: 0 8px;
+            font-size: 11px;
+            font-weight: 750;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .value-pill {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            color: var(--green);
+        }
+
+        .playback-row {
+            display: grid;
+            grid-template-columns: 76px 76px 76px minmax(0, 1fr);
+            align-items: center;
+            gap: 8px;
+            padding-top: 2px;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .summary-card {
+            min-width: 0;
+            background: var(--panel-2);
+            border: 1px solid rgba(103, 143, 184, 0.20);
+            border-radius: 7px;
+            padding: 8px;
+        }
+
+        .summary-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #6d849a;
+            font-size: 8px;
+        }
+
+        .summary-value {
+            display: block;
+            color: #d7e8fa;
+            font-size: 11px;
+            line-height: 1.2;
+            font-weight: 750;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #error-log {
+            position: absolute;
+            top: 14px;
+            right: 116px;
+            z-index: 99;
+            display: none;
+            width: min(520px, calc(100vw - 144px));
+            max-height: 40vh;
+            overflow: auto;
+            padding: 10px 12px;
+            background: rgba(24, 6, 8, 0.94);
+            border: 1px solid rgba(255, 108, 115, 0.6);
+            border-radius: 8px;
+            color: #ffd9dc;
+            font: 11px/1.4 Consolas, monospace;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 1240px) {
+            #control-rail {
+                grid-template-columns: 1fr 1.45fr;
+                max-height: 48vh;
+                overflow-y: auto;
+            }
+        }
+
+        @media (max-width: 760px) {
+            :root {
+                --hud-edge: 14px;
+                --hud-radius: 8px;
+                --hud-pad-x: 12px;
+                --hud-pad-y: 10px;
+                --readout-width: calc(100vw - 28px);
+                --readout-title: 14px;
+                --readout-status: 9px;
+                --metric-label-size: 8px;
+                --metric-value-size: 12px;
+                --legend-width: 78px;
+                --legend-height: 146px;
+                --legend-ramp-width: 16px;
+                --legend-body-offset: 54px;
+            }
+
+            #top-readout {
+                width: calc(100vw - 28px);
+                top: 14px;
+                left: 14px;
+            }
+
+            #metrics {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            #legend {
+                top: auto;
+                right: 14px;
+                bottom: calc(var(--rail-height) + 14px);
+                padding: 8px;
+            }
+
+            .legend-body {
+                grid-template-columns: 16px 1fr;
+                gap: 7px;
+                height: 92px;
+            }
+
+            .legend-ramp {
+                width: 16px;
+            }
+
+            #scenario-badge {
+                display: none;
+            }
+
+            #control-rail {
+                grid-template-columns: 1fr;
+                max-height: 50vh;
+            }
+
+            .playback-row,
+            .timeline-row {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+
+            .playback-row {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div id="simulation">
+            <canvas id="thermal-canvas"></canvas>
+        </div>
+
+        <div id="top-readout">
+            <div class="readout-head">
+                <h1>Thermal Heat Transfer Model</h1>
+                <span id="play-state">Running</span>
+            </div>
+            <div id="metrics">
+                <div class="metric"><span class="label">Sim Time</span><span class="value" id="metric-time">--</span></div>
+                <div class="metric"><span class="label">Source</span><span class="value" id="metric-hot">--</span></div>
+                <div class="metric"><span class="label">Cold Block</span><span class="value" id="metric-cold">--</span></div>
+                <div class="metric is-hidden"><span class="label">Net Power</span><span class="value" id="metric-flow">--</span></div>
+                <div class="metric is-hidden"><span class="label">Equilibrium</span><span class="value" id="metric-equilibrium">--</span></div>
+            </div>
+        </div>
+
+        <div id="legend">
+            <div class="legend-label">Temp</div>
+            <div class="legend-body">
+                <div class="legend-ramp"></div>
+                <div class="legend-ticks">
+                    <span id="legend-hot">--</span>
+                    <span id="legend-mid">--</span>
+                    <span id="legend-cold">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="scenario-badge">
+            <strong id="scenario-title">Radiation</strong>
+            <span id="scenario-detail">Greybody exchange between long, thin aluminum volumes inside a glass cutaway.</span>
+        </div>
+
+        <div id="control-rail">
+            <section class="control-section">
+                <h2>Scenarios</h2>
+                <div class="scenario-grid">
+                    <button class="toggle-btn active" data-scenario="radiation">Greybody Radiation</button>
+                    <button class="toggle-btn" data-scenario="gas">Gas Convection</button>
+                    <button class="toggle-btn" data-scenario="liquid">Liquid Convection</button>
+                    <button class="toggle-btn" data-scenario="conduction">Contact Conduction</button>
+                </div>
+            </section>
+
+            <section class="control-section playback">
+                <h2>Playback</h2>
+                <div class="playback-row">
+                    <button class="play-btn active" id="play-btn">Play</button>
+                    <button class="play-btn" id="pause-btn">Pause</button>
+                    <button class="mini-btn" id="reset-btn">Reset</button>
+                    <div class="value-pill" id="stability-pill">stable step --</div>
+                </div>
+                <div class="timeline-row">
+                    <label for="speed-slider">Sim Rate</label>
+                    <div class="range-wrap"><input id="speed-slider" type="range" min="0" max="1000" step="1" value="251"></div>
+                    <input class="numeric-input" id="speed-input" type="number" min="1" step="1" value="60">
+                </div>
+                <div class="timeline-row">
+                    <label for="mesh-slider">Mesh</label>
+                    <div class="range-wrap"><input id="mesh-slider" type="range" min="80" max="420" step="4" value="420"></div>
+                    <input class="numeric-input" id="mesh-input" type="number" min="80" max="420" step="4" value="420">
+                </div>
+            </section>
+
+            <section class="control-section settings">
+                <h2>Initial Conditions</h2>
+                <div class="timeline-row">
+                    <label for="hot-slider" id="hot-label">Hot Block</label>
+                    <div class="range-wrap"><input id="hot-slider" type="range" min="120" max="3600" step="10" value="2800"></div>
+                    <input class="numeric-input" id="hot-input" type="number" min="120" max="3600" step="10" value="2800">
+                </div>
+                <div class="timeline-row">
+                    <label for="cold-slider">Cold Block</label>
+                    <div class="range-wrap"><input id="cold-slider" type="range" min="-40" max="120" step="1" value="20"></div>
+                    <input class="numeric-input" id="cold-input" type="number" min="-40" max="120" step="1" value="20">
+                </div>
+                <div class="timeline-row">
+                    <label for="coupling-slider" id="coupling-label">Coupling</label>
+                    <div class="range-wrap"><input id="coupling-slider" type="range" min="25" max="220" step="1" value="100"></div>
+                    <input class="numeric-input" id="coupling-input" type="number" min="25" max="220" step="1" value="100">
+                </div>
+            </section>
+
+            <section class="control-section">
+                <h2>Model Readout</h2>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <span class="summary-label">Method</span>
+                        <span class="summary-value" id="summary-method">Volumetric FEM</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-label">Cells</span>
+                        <span class="summary-value" id="summary-cells">--</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-label">Boundary</span>
+                        <span class="summary-value" id="summary-boundary">--</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-label">Material</span>
+                        <span class="summary-value">Aluminum 6061</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <pre id="error-log"></pre>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        (() => {
+            "use strict";
+
+            const K0 = 273.15;
+            const SIGMA = 5.670374419e-8;
+            const SPACE_TEMP_K = 3.0;
+            const SPACE_VIEW_FACTOR = 0.92;
+            const DOMAIN = {
+                length: 1.08,
+                height: 0.12,
+                depth: 0.055,
+                ductHeight: 0.145,
+                ductDepth: 0.078,
+                scale: 8.8
+            };
+            const SOLID_RENDER_SUBDIVISIONS = 1;
+            const SPEED_SLIDER_MAX = 12000000000;
+            const SPEED_SLIDER_STEPS = 1000;
+            const COLORS = {
+                bg: "#171717",
+                green: "#46e8a2",
+                yellow: "#f2d64a",
+                cyan: "#45e4ff"
+            };
+
+            const MATERIALS = {
+                aluminum: {
+                    name: "Aluminum 6061",
+                    k: 167,
+                    rho: 2700,
+                    cp: 896,
+                    emissivity: 0.12
+                },
+                anodizedAluminum: {
+                    name: "Anodized aluminum",
+                    k: 155,
+                    rho: 2700,
+                    cp: 896,
+                    emissivity: 0.82
+                }
+            };
+
+            const SCENARIO_DEFAULTS = {
+                radiation: {
+                    id: "radiation",
+                    name: "Greybody Radiation",
+                    detail: "The source is intentionally extreme, so the gap glow scales hard with T^4 radiation.",
+                    kind: "radiation",
+                    defaultHotC: 2800,
+                    defaultColdC: 20,
+                    defaultCoupling: 185,
+                    couplingLabel: "Emittance",
+                    sourceLabel: "Hot Block",
+                    boundaryLabel: "gap exchange + space radiation",
+                    speed: 60
+                },
+                gas: {
+                    id: "gas",
+                    name: "Gas Convection",
+                    detail: "Hot gas particles stream through the glass duct and convect heat into a thin aluminum bar.",
+                    kind: "convection",
+                    fluid: "gas",
+                    defaultHotC: 950,
+                    defaultColdC: 20,
+                    defaultCoupling: 100,
+                    couplingLabel: "Gas h",
+                    sourceLabel: "Hot Gas",
+                    boundaryLabel: "gas convection + space radiation",
+                    speed: 60
+                },
+                liquid: {
+                    id: "liquid",
+                    name: "Liquid Convection",
+                    detail: "Hot liquid droplets bounce through the duct, collide, and drive stronger surface convection.",
+                    kind: "convection",
+                    fluid: "liquid",
+                    defaultHotC: 760,
+                    defaultColdC: 20,
+                    defaultCoupling: 120,
+                    couplingLabel: "Liquid h",
+                    sourceLabel: "Hot Liquid",
+                    boundaryLabel: "liquid convection + space radiation",
+                    speed: 60
+                },
+                conduction: {
+                    id: "conduction",
+                    name: "Contact Conduction",
+                    detail: "Two long, thin aluminum bars touch at the center and conduct heat through the interface.",
+                    kind: "conduction",
+                    defaultHotC: 720,
+                    defaultColdC: 20,
+                    defaultCoupling: 100,
+                    couplingLabel: "Contact",
+                    sourceLabel: "Hot Block",
+                    boundaryLabel: "contact + space radiation",
+                    speed: 60
+                }
+            };
+
+            const elements = {
+                simulation: document.getElementById("simulation"),
+                canvas: document.getElementById("thermal-canvas"),
+                controlRail: document.getElementById("control-rail"),
+                playState: document.getElementById("play-state"),
+                metricTime: document.getElementById("metric-time"),
+                metricHot: document.getElementById("metric-hot"),
+                metricCold: document.getElementById("metric-cold"),
+                metricFlow: document.getElementById("metric-flow"),
+                metricEquilibrium: document.getElementById("metric-equilibrium"),
+                legendHot: document.getElementById("legend-hot"),
+                legendMid: document.getElementById("legend-mid"),
+                legendCold: document.getElementById("legend-cold"),
+                scenarioTitle: document.getElementById("scenario-title"),
+                scenarioDetail: document.getElementById("scenario-detail"),
+                playBtn: document.getElementById("play-btn"),
+                pauseBtn: document.getElementById("pause-btn"),
+                resetBtn: document.getElementById("reset-btn"),
+                speedSlider: document.getElementById("speed-slider"),
+                speedInput: document.getElementById("speed-input"),
+                meshSlider: document.getElementById("mesh-slider"),
+                meshInput: document.getElementById("mesh-input"),
+                hotSlider: document.getElementById("hot-slider"),
+                hotInput: document.getElementById("hot-input"),
+                coldSlider: document.getElementById("cold-slider"),
+                coldInput: document.getElementById("cold-input"),
+                couplingSlider: document.getElementById("coupling-slider"),
+                couplingInput: document.getElementById("coupling-input"),
+                couplingLabel: document.getElementById("coupling-label"),
+                hotLabel: document.getElementById("hot-label"),
+                stabilityPill: document.getElementById("stability-pill"),
+                summaryCells: document.getElementById("summary-cells"),
+                summaryBoundary: document.getElementById("summary-boundary"),
+                errorLog: document.getElementById("error-log")
+            };
+
+            const state = {
+                scenarioId: "radiation",
+                playing: true,
+                speed: 60,
+                meshNx: 420,
+                hotC: 2800,
+                coldC: 20,
+                couplingPct: 185,
+                simTime: 0,
+                frameTime: 0,
+                scenario: null,
+                solver: null,
+                particleSystem: null,
+                renderer: null
+            };
+
+            function clamp(value, min, max) {
+                return Math.max(min, Math.min(max, value));
+            }
+
+            function lerp(a, b, t) {
+                return a + (b - a) * t;
+            }
+
+            function cToK(celsius) {
+                return celsius + K0;
+            }
+
+            function kToC(kelvin) {
+                return kelvin - K0;
+            }
+
+            function formatTemp(kelvin) {
+                return `${Math.round(kToC(kelvin))} C`;
+            }
+
+            function formatKelvin(kelvin) {
+                return `${Math.max(0, Math.round(kelvin))} K`;
+            }
+
+            function formatTime(seconds) {
+                if (seconds < 60) return `${seconds.toFixed(1)} s`;
+                if (seconds < 3600) return `${(seconds / 60).toFixed(1)} min`;
+                if (seconds < 86400) return `${(seconds / 3600).toFixed(2)} hr`;
+                if (seconds < 31557600) return `${(seconds / 86400).toFixed(2)} d`;
+                const years = seconds / 31557600;
+                if (years < 1000) return `${years.toFixed(2)} yr`;
+                if (years < 1000000) return `${(years / 1000).toFixed(2)} kyr`;
+                return `${(years / 1000000).toFixed(2)} Myr`;
+            }
+
+            function sliderToSpeed(value) {
+                const t = clamp(Number(value) / SPEED_SLIDER_STEPS, 0, 1);
+                return Math.max(1, Math.round(Math.pow(SPEED_SLIDER_MAX, t)));
+            }
+
+            function speedToSlider(speed) {
+                const safeSpeed = Math.max(1, Number(speed) || 1);
+                const t = Math.log(safeSpeed) / Math.log(SPEED_SLIDER_MAX);
+                return Math.round(clamp(t, 0, 1) * SPEED_SLIDER_STEPS);
+            }
+
+            function formatWatts(watts) {
+                const abs = Math.abs(watts);
+                if (abs >= 1000000) return `${(watts / 1000000).toFixed(2)} MW`;
+                if (abs >= 1000) return `${(watts / 1000).toFixed(2)} kW`;
+                if (abs >= 10) return `${watts.toFixed(1)} W`;
+                return `${watts.toFixed(2)} W`;
+            }
+
+            function hash01(index, salt = 1) {
+                const x = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            function colorForTemperature(kelvin, maxKelvin = 2900) {
+                const stops = [
+                    { t: 0.00, r: 0, g: 0, b: 99 },
+                    { t: 0.14, r: 0, g: 0, b: 205 },
+                    { t: 0.28, r: 0, g: 88, b: 255 },
+                    { t: 0.43, r: 0, g: 226, b: 255 },
+                    { t: 0.58, r: 0, g: 232, b: 62 },
+                    { t: 0.72, r: 255, g: 255, b: 0 },
+                    { t: 0.84, r: 255, g: 132, b: 0 },
+                    { t: 0.94, r: 255, g: 0, b: 0 },
+                    { t: 1.00, r: 88, g: 0, b: 0 }
+                ];
+                const tone = clamp(kelvin / Math.max(maxKelvin, 1), 0, 1);
+                for (let i = 1; i < stops.length; i++) {
+                    const a = stops[i - 1];
+                    const b = stops[i];
+                    if (tone <= b.t) {
+                        const local = clamp((tone - a.t) / Math.max(b.t - a.t, 1e-6), 0, 1);
+                        return new THREE.Color(
+                            lerp(a.r, b.r, local) / 255,
+                            lerp(a.g, b.g, local) / 255,
+                            lerp(a.b, b.b, local) / 255
+                        );
+                    }
+                }
+                const last = stops[stops.length - 1];
+                return new THREE.Color(last.r / 255, last.g / 255, last.b / 255);
+            }
+
+            function visibleColorForTemperature(kelvin, maxKelvin = 2900) {
+                return colorForTemperature(kelvin, maxKelvin);
+            }
+
+            function glowStrengthForTemperature(kelvin) {
+                const celsius = kToC(kelvin);
+                if (celsius < 280) return 0;
+                if (celsius < 650) return Math.pow((celsius - 280) / 370, 1.65) * 0.22;
+                if (celsius < 1300) return 0.22 + Math.pow((celsius - 650) / 650, 1.25) * 0.56;
+                return clamp(0.78 + (celsius - 1300) / 900 * 0.42, 0, 1.18);
+            }
+
+            function glowColorForTemperature(kelvin, maxKelvin = 2900) {
+                return colorForTemperature(kelvin, maxKelvin);
+            }
+
+            function makeGlowTexture() {
+                const canvas = document.createElement("canvas");
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext("2d");
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
+                grad.addColorStop(0.00, "rgba(255,255,255,1)");
+                grad.addColorStop(0.16, "rgba(255,255,255,0.78)");
+                grad.addColorStop(0.42, "rgba(255,255,255,0.28)");
+                grad.addColorStop(0.72, "rgba(255,255,255,0.08)");
+                grad.addColorStop(1.00, "rgba(255,255,255,0)");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.minFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                return texture;
+            }
+
+            function makeLabelTexture(text) {
+                const canvas = document.createElement("canvas");
+                canvas.width = 512;
+                canvas.height = 128;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "rgba(5, 9, 17, 0.72)";
+                ctx.strokeStyle = "rgba(103, 173, 231, 0.42)";
+                ctx.lineWidth = 3;
+                const x = 14;
+                const y = 18;
+                const w = canvas.width - 28;
+                const h = canvas.height - 36;
+                const r = 18;
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + w - r, y);
+                ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                ctx.lineTo(x + w, y + h - r);
+                ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                ctx.lineTo(x + r, y + h);
+                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = "#d8e6f5";
+                ctx.font = "800 46px Segoe UI, Arial, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.encoding = THREE.sRGBEncoding;
+                texture.minFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                return texture;
+            }
+
+            function withWhiteVertexColors(geometry) {
+                const position = geometry.attributes.position;
+                const colors = new Float32Array(position.count * 3);
+                colors.fill(1);
+                geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+                return geometry;
+            }
+
+            class ThermalMesh {
+                constructor(nx, length, height, depth, ny = 8, nz = 5) {
+                    this.nx = nx;
+                    this.ny = Math.max(2, ny);
+                    this.nz = Math.max(2, nz);
+                    this.length = length;
+                    this.height = height;
+                    this.depth = depth;
+                    this.dx = length / nx;
+                    this.dy = height / this.ny;
+                    this.dz = depth / this.nz;
+                    this.crossArea = height * depth;
+                    this.perimeter = 2 * (height + depth);
+                    this.y0 = -height / 2;
+                    this.z0 = -depth / 2;
+                    this.xyStride = this.nx * this.ny;
+                    this.count = this.nx * this.ny * this.nz;
+                    this.region = new Uint8Array(this.count);
+                    this.material = new Uint8Array(this.count);
+                    this.temperature = new Float64Array(this.count);
+                    this.nextTemperature = new Float64Array(this.count);
+                    this.capacity = new Float64Array(this.count);
+                    this.conductivity = new Float64Array(this.count);
+                    this.blocks = [];
+                    this.totalCapacity = 0;
+                }
+
+                index(ix, iy, iz) {
+                    return ix + this.nx * (iy + this.ny * iz);
+                }
+
+                ix(index) {
+                    return index % this.nx;
+                }
+
+                iy(index) {
+                    return Math.floor(index / this.nx) % this.ny;
+                }
+
+                iz(index) {
+                    return Math.floor(index / this.xyStride);
+                }
+
+                centerX(index) {
+                    return (this.ix(index) + 0.5) * this.dx;
+                }
+
+                centerY(index) {
+                    return this.y0 + (this.iy(index) + 0.5) * this.dy;
+                }
+
+                centerZ(index) {
+                    return this.z0 + (this.iz(index) + 0.5) * this.dz;
+                }
+
+                fillBlock(options) {
+                    const materialId = options.material === "anodizedAluminum" ? 2 : 1;
+                    const visualHeight = options.visualHeight || this.height;
+                    const visualDepth = options.visualDepth || this.depth;
+                    const y0 = -visualHeight / 2;
+                    const y1 = visualHeight / 2;
+                    const z0 = -visualDepth / 2;
+                    const z1 = visualDepth / 2;
+                    this.blocks.push({
+                        region: options.region,
+                        name: options.name,
+                        x0: options.x0,
+                        x1: options.x1,
+                        y0,
+                        y1,
+                        z0,
+                        z1,
+                        material: options.material,
+                        tone: options.tone || "solid",
+                        visualHeight,
+                        visualDepth
+                    });
+                    for (let iz = 0; iz < this.nz; iz++) {
+                        const z = this.z0 + (iz + 0.5) * this.dz;
+                        if (z < z0 || z > z1) continue;
+                        for (let iy = 0; iy < this.ny; iy++) {
+                            const y = this.y0 + (iy + 0.5) * this.dy;
+                            if (y < y0 || y > y1) continue;
+                            for (let ix = 0; ix < this.nx; ix++) {
+                                const x = (ix + 0.5) * this.dx;
+                                if (x < options.x0 || x > options.x1) continue;
+                                const id = this.index(ix, iy, iz);
+                                this.region[id] = options.region;
+                                this.material[id] = materialId;
+                                this.temperature[id] = options.temperatureK;
+                            }
+                        }
+                    }
+                }
+
+                finalize() {
+                    this.totalCapacity = 0;
+                    const volume = this.dx * this.dy * this.dz;
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.material[i] === 0) continue;
+                        const mat = this.material[i] === 2 ? MATERIALS.anodizedAluminum : MATERIALS.aluminum;
+                        const cap = mat.rho * mat.cp * volume;
+                        this.capacity[i] = cap;
+                        this.conductivity[i] = mat.k;
+                        this.totalCapacity += cap;
+                    }
+                }
+
+                neighbor(index, axis, dir) {
+                    const ix = this.ix(index);
+                    const iy = this.iy(index);
+                    const iz = this.iz(index);
+                    if (axis === "x") {
+                        const x = ix + dir;
+                        return x < 0 || x >= this.nx ? -1 : this.index(x, iy, iz);
+                    }
+                    if (axis === "y") {
+                        const y = iy + dir;
+                        return y < 0 || y >= this.ny ? -1 : this.index(ix, y, iz);
+                    }
+                    const z = iz + dir;
+                    return z < 0 || z >= this.nz ? -1 : this.index(ix, iy, z);
+                }
+
+                axisFaceArea(axis) {
+                    if (axis === "x") return this.dy * this.dz;
+                    if (axis === "y") return this.dx * this.dz;
+                    return this.dx * this.dy;
+                }
+
+                axisDistance(axis) {
+                    if (axis === "x") return this.dx;
+                    if (axis === "y") return this.dy;
+                    return this.dz;
+                }
+
+                endCell(regionId, side) {
+                    const face = this.faceCells(regionId, side);
+                    if (!face.length) return -1;
+                    let best = face[0];
+                    let bestR2 = Infinity;
+                    for (let p = 0; p < face.length; p++) {
+                        const id = face[p];
+                        const y = this.centerY(id);
+                        const z = this.centerZ(id);
+                        const r2 = y * y + z * z;
+                        if (r2 < bestR2) {
+                            bestR2 = r2;
+                            best = id;
+                        }
+                    }
+                    return best;
+                }
+
+                cellsForRegion(regionId) {
+                    const ids = [];
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.region[i] === regionId) ids.push(i);
+                    }
+                    return ids;
+                }
+
+                faceCells(regionId, side) {
+                    let targetIx = side === "right" ? -1 : this.nx;
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.region[i] !== regionId) continue;
+                        const ix = this.ix(i);
+                        targetIx = side === "right" ? Math.max(targetIx, ix) : Math.min(targetIx, ix);
+                    }
+                    if (targetIx < 0 || targetIx >= this.nx) return [];
+                    const ids = [];
+                    for (let iz = 0; iz < this.nz; iz++) {
+                        for (let iy = 0; iy < this.ny; iy++) {
+                            const id = this.index(targetIx, iy, iz);
+                            if (this.region[id] === regionId) ids.push(id);
+                        }
+                    }
+                    return ids;
+                }
+
+                averageForRegion(regionId) {
+                    let energy = 0;
+                    let capacity = 0;
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.region[i] !== regionId) continue;
+                        const cap = this.capacity[i];
+                        energy += this.temperature[i] * cap;
+                        capacity += cap;
+                    }
+                    return capacity > 0 ? energy / capacity : 0;
+                }
+
+                totalEnergy() {
+                    let energy = 0;
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.material[i] === 0) continue;
+                        energy += this.temperature[i] * this.capacity[i];
+                    }
+                    return energy;
+                }
+
+                maxForRegion(regionId) {
+                    let max = 0;
+                    for (let i = 0; i < this.count; i++) {
+                        if (this.region[i] === regionId) max = Math.max(max, this.temperature[i]);
+                    }
+                    return max;
+                }
+
+                emissivityAt(index) {
+                    if (this.material[index] === 2) return MATERIALS.anodizedAluminum.emissivity;
+                    if (this.material[index] === 1) return MATERIALS.aluminum.emissivity;
+                    return 0;
+                }
+
+                radiatingAreaAt(index) {
+                    if (this.material[index] === 0) return 0;
+                    let area = 0;
+                    const axes = ["x", "y", "z"];
+                    for (const axis of axes) {
+                        for (const dir of [-1, 1]) {
+                            const n = this.neighbor(index, axis, dir);
+                            if (n < 0 || this.material[n] === 0) area += this.axisFaceArea(axis);
+                        }
+                    }
+                    return area;
+                }
+            }
+
+            class BoundaryModels {
+                static radiation(mesh, hotRegion, coldRegion, couplingPct) {
+                    const hotId = mesh.endCell(hotRegion, "right");
+                    const coldId = mesh.endCell(coldRegion, "left");
+                    const hotBlock = mesh.blocks.find((block) => block.region === hotRegion);
+                    const coldBlock = mesh.blocks.find((block) => block.region === coldRegion);
+                    const gap = coldBlock && hotBlock ? Math.max(coldBlock.x0 - hotBlock.x1, mesh.dx) : 0.1;
+                    const epsHot = mesh.emissivityAt(hotId) * (couplingPct / 100);
+                    const epsCold = mesh.emissivityAt(coldId);
+                    const epsEff = 1 / ((1 / Math.max(epsHot, 0.02)) + (1 / epsCold) - 1);
+                    const hotFaceArea = hotBlock ? (hotBlock.visualHeight || mesh.height) * (hotBlock.visualDepth || mesh.depth) : mesh.crossArea;
+                    const coldFaceArea = coldBlock ? (coldBlock.visualHeight || mesh.height) * (coldBlock.visualDepth || mesh.depth) : mesh.crossArea;
+                    const faceArea = Math.sqrt(hotFaceArea * coldFaceArea);
+                    const view = clamp(faceArea / (faceArea + gap * gap * 0.16), 0.62, 0.995);
+                    const hotFace = mesh.faceCells(hotRegion, "right");
+                    const coldFace = mesh.faceCells(coldRegion, "left");
+                    const coldByYZ = new Map();
+                    for (const id of coldFace) {
+                        coldByYZ.set(`${mesh.iy(id)}:${mesh.iz(id)}`, id);
+                    }
+                    const hotIds = [];
+                    const coldIds = [];
+                    const areas = [];
+                    const halfH = Math.max(mesh.height * 0.5, 1e-6);
+                    const halfD = Math.max(mesh.depth * 0.5, 1e-6);
+                    for (const hot of hotFace) {
+                        const cold = coldByYZ.get(`${mesh.iy(hot)}:${mesh.iz(hot)}`);
+                        if (cold === undefined) continue;
+                        const yn = mesh.centerY(hot) / halfH;
+                        const zn = mesh.centerZ(hot) / halfD;
+                        const localView = 0.58 + 0.42 * Math.exp(-(yn * yn + zn * zn) * 1.65);
+                        hotIds.push(hot);
+                        coldIds.push(cold);
+                        areas.push(mesh.dy * mesh.dz * 6.5 * localView);
+                    }
+                    return {
+                        type: "radiation",
+                        hotId,
+                        coldId,
+                        hotIds: Int32Array.from(hotIds),
+                        coldIds: Int32Array.from(coldIds),
+                        areas: Float64Array.from(areas),
+                        count: hotIds.length,
+                        area: areas.reduce((sum, item) => sum + item, 0),
+                        view: view * epsEff,
+                        gap
+                    };
+                }
+
+                static convection(mesh, regionId, fluidTempK, hBase, couplingPct, liquid) {
+                    const face = mesh.faceCells(regionId, "left");
+                    const areas = new Float64Array(face.length);
+                    const coeffs = new Float64Array(face.length);
+                    for (let p = 0; p < face.length; p++) {
+                        const id = face[p];
+                        const yn = mesh.centerY(id) / Math.max(mesh.height * 0.5, 1e-6);
+                        const zn = mesh.centerZ(id) / Math.max(mesh.depth * 0.5, 1e-6);
+                        const radial = yn * yn + zn * zn;
+                        const core = Math.exp(-radial * (liquid ? 1.8 : 2.6));
+                        const roll = 0.12 * Math.sin(mesh.centerY(id) * 42 + mesh.centerZ(id) * 37);
+                        areas[p] = mesh.dy * mesh.dz;
+                        coeffs[p] = hBase * (0.32 + 0.88 * core + roll) * (couplingPct / 100);
+                    }
+                    return {
+                        type: "convection",
+                        ids: Int32Array.from(face),
+                        areas,
+                        coeffs,
+                        fluidTempK,
+                        count: face.length
+                    };
+                }
+            }
+
+            class ThermalSolver {
+                constructor(scenario) {
+                    this.scenario = scenario;
+                    this.mesh = scenario.mesh;
+                    this.delta = new Float64Array(this.mesh.count);
+                    this.pairsA = null;
+                    this.pairsB = null;
+                    this.pairG = null;
+                    this.crossA = null;
+                    this.crossB = null;
+                    this.crossG = null;
+                    this.radIds = null;
+                    this.radAreaEps = null;
+                    this.maxDt = 0.08;
+                    this.lastBoundaryFlux = 0;
+                    this.lastCrossFlux = 0;
+                    this.lastSpaceRadiationFlux = 0;
+                    this.lastSubsteps = 0;
+                    this.implicitDiag = new Float64Array(this.mesh.count);
+                    this.implicitRhs = new Float64Array(this.mesh.count);
+                    this.implicitGuess = new Float64Array(this.mesh.count);
+                    this.implicitNext = new Float64Array(this.mesh.count);
+                    this.buildConductance();
+                    this.buildRadiationLosses();
+                }
+
+                buildConductance() {
+                    const mesh = this.mesh;
+                    const a = [];
+                    const b = [];
+                    const g = [];
+                    const ca = [];
+                    const cb = [];
+                    const cg = [];
+                    const sumG = new Float64Array(mesh.count);
+                    const addPair = (i, j, axis) => {
+                        if (mesh.material[i] === 0 || mesh.material[j] === 0) return;
+                        const conductance = this.faceConductance(i, j, axis);
+                        a.push(i);
+                        b.push(j);
+                        g.push(conductance);
+                        sumG[i] += conductance;
+                        sumG[j] += conductance;
+                        if (mesh.region[i] !== mesh.region[j]) {
+                            ca.push(i);
+                            cb.push(j);
+                            cg.push(conductance);
+                        }
+                    };
+                    for (let iz = 0; iz < mesh.nz; iz++) {
+                        for (let iy = 0; iy < mesh.ny; iy++) {
+                            for (let ix = 0; ix < mesh.nx; ix++) {
+                                const i = mesh.index(ix, iy, iz);
+                                if (ix + 1 < mesh.nx) addPair(i, mesh.index(ix + 1, iy, iz), "x");
+                                if (iy + 1 < mesh.ny) addPair(i, mesh.index(ix, iy + 1, iz), "y");
+                                if (iz + 1 < mesh.nz) addPair(i, mesh.index(ix, iy, iz + 1), "z");
+                            }
+                        }
+                    }
+                    let stable = Infinity;
+                    for (let i = 0; i < mesh.count; i++) {
+                        if (mesh.material[i] === 0 || sumG[i] <= 0) continue;
+                        stable = Math.min(stable, 0.46 * mesh.capacity[i] / sumG[i]);
+                    }
+                    this.pairsA = Int32Array.from(a);
+                    this.pairsB = Int32Array.from(b);
+                    this.pairG = Float64Array.from(g);
+                    this.crossA = Int32Array.from(ca);
+                    this.crossB = Int32Array.from(cb);
+                    this.crossG = Float64Array.from(cg);
+                    this.maxDt = Number.isFinite(stable) ? clamp(stable, 0.004, 0.24) : 0.08;
+                }
+
+                buildRadiationLosses() {
+                    const ids = [];
+                    const areaEps = [];
+                    for (let i = 0; i < this.mesh.count; i++) {
+                        if (this.mesh.material[i] === 0) continue;
+                        const area = this.mesh.radiatingAreaAt(i);
+                        const eps = this.mesh.emissivityAt(i);
+                        if (area <= 0 || eps <= 0) continue;
+                        ids.push(i);
+                        areaEps.push(area * eps * SPACE_VIEW_FACTOR);
+                    }
+                    this.radIds = Int32Array.from(ids);
+                    this.radAreaEps = Float64Array.from(areaEps);
+                }
+
+                faceConductance(i, j, axis) {
+                    const ki = this.mesh.conductivity[i];
+                    const kj = this.mesh.conductivity[j];
+                    const harmonic = (2 * ki * kj) / Math.max(ki + kj, 1e-9);
+                    return harmonic * this.mesh.axisFaceArea(axis) / this.mesh.axisDistance(axis);
+                }
+
+                step(totalDt) {
+                    const requested = Math.max(0, totalDt);
+                    if (requested <= 1e-9) return 0;
+                    if (requested > this.maxDt * 10) return this.stepImplicit(requested);
+                    return this.stepExplicit(requested);
+                }
+
+                stepExplicit(totalDt) {
+                    let remaining = Math.max(0, totalDt);
+                    let substeps = 0;
+                    let fluxSum = 0;
+                    let spaceFluxSum = 0;
+                    while (remaining > 1e-8) {
+                        const dt = Math.min(remaining, this.maxDt);
+                        fluxSum += this.stepOnce(dt);
+                        spaceFluxSum += this.lastSpaceRadiationFlux;
+                        remaining -= dt;
+                        substeps++;
+                    }
+                    this.lastSubsteps = substeps;
+                    this.lastBoundaryFlux = substeps > 0 ? fluxSum / substeps : this.lastBoundaryFlux;
+                    this.lastSpaceRadiationFlux = substeps > 0 ? spaceFluxSum / substeps : this.lastSpaceRadiationFlux;
+                    this.lastCrossFlux = this.computeCrossFlux();
+                    return totalDt - remaining;
+                }
+
+                stepImplicit(totalDt) {
+                    let remaining = Math.max(0, totalDt);
+                    let substeps = 0;
+                    let fluxSum = 0;
+                    let spaceFluxSum = 0;
+                    while (remaining > 1e-8) {
+                        const dt = Math.min(remaining, this.implicitTimeStep());
+                        fluxSum += this.stepImplicitOnce(dt);
+                        spaceFluxSum += this.lastSpaceRadiationFlux;
+                        remaining -= dt;
+                        substeps++;
+                        if (substeps > 2400 && remaining > 0) {
+                            fluxSum += this.stepImplicitOnce(remaining);
+                            spaceFluxSum += this.lastSpaceRadiationFlux;
+                            remaining = 0;
+                            substeps++;
+                        }
+                    }
+                    this.lastSubsteps = substeps;
+                    this.lastBoundaryFlux = substeps > 0 ? fluxSum / substeps : this.lastBoundaryFlux;
+                    this.lastSpaceRadiationFlux = substeps > 0 ? spaceFluxSum / substeps : this.lastSpaceRadiationFlux;
+                    this.lastCrossFlux = this.computeCrossFlux();
+                    return totalDt - remaining;
+                }
+
+                implicitTimeStep() {
+                    const mesh = this.mesh;
+                    const t = mesh.temperature;
+                    let tau = Infinity;
+                    for (let p = 0; p < this.radIds.length; p++) {
+                        const id = this.radIds[p];
+                        const ti = Math.max(t[id], SPACE_TEMP_K + 1e-3);
+                        const h = SIGMA * this.radAreaEps[p] * (ti + SPACE_TEMP_K) * (ti * ti + SPACE_TEMP_K * SPACE_TEMP_K);
+                        if (h > 1e-12) tau = Math.min(tau, mesh.capacity[id] / h);
+                    }
+                    const boundary = this.scenario.boundary;
+                    if (boundary && boundary.type === "convection") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const id = boundary.ids[p];
+                            const h = boundary.coeffs[p] * boundary.areas[p];
+                            if (h > 1e-12) tau = Math.min(tau, mesh.capacity[id] / h);
+                        }
+                    } else if (boundary && boundary.type === "radiation") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const hotId = boundary.hotIds[p];
+                            const coldId = boundary.coldIds[p];
+                            const h = this.linearizedRadiationConductance(t[hotId], t[coldId], boundary, boundary.areas[p]);
+                            if (h > 1e-12) tau = Math.min(tau, mesh.capacity[hotId] / h, mesh.capacity[coldId] / h);
+                        }
+                    }
+                    if (!Number.isFinite(tau)) return 31557600;
+                    return Math.max(this.maxDt, tau * 0.35);
+                }
+
+                stepImplicitOnce(dt) {
+                    const mesh = this.mesh;
+                    const t = mesh.temperature;
+                    const diag = this.implicitDiag;
+                    const rhs = this.implicitRhs;
+                    const guess = this.implicitGuess;
+                    const next = this.implicitNext;
+                    const pairA = [];
+                    const pairB = [];
+                    const pairC = [];
+                    const addPair = (i, j, conductance) => {
+                        if (i < 0 || j < 0 || conductance <= 0) return;
+                        const c = dt * conductance;
+                        diag[i] += c;
+                        diag[j] += c;
+                        pairA.push(i);
+                        pairB.push(j);
+                        pairC.push(c);
+                    };
+
+                    for (let i = 0; i < mesh.count; i++) {
+                        if (mesh.material[i] === 0) {
+                            diag[i] = 1;
+                            rhs[i] = 0;
+                            guess[i] = 0;
+                            continue;
+                        }
+                        const cap = mesh.capacity[i];
+                        diag[i] = cap;
+                        rhs[i] = cap * t[i];
+                        guess[i] = t[i];
+                    }
+
+                    for (let p = 0; p < this.pairsA.length; p++) {
+                        addPair(this.pairsA[p], this.pairsB[p], this.pairG[p]);
+                    }
+
+                    for (let p = 0; p < this.radIds.length; p++) {
+                        const id = this.radIds[p];
+                        const ti = Math.max(t[id], SPACE_TEMP_K);
+                        const h = SIGMA * this.radAreaEps[p] * (ti + SPACE_TEMP_K) * (ti * ti + SPACE_TEMP_K * SPACE_TEMP_K);
+                        diag[id] += dt * h;
+                        rhs[id] += dt * h * SPACE_TEMP_K;
+                    }
+
+                    const boundary = this.scenario.boundary;
+                    if (boundary && boundary.type === "radiation") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const hotId = boundary.hotIds[p];
+                            const coldId = boundary.coldIds[p];
+                            const h = this.linearizedRadiationConductance(t[hotId], t[coldId], boundary, boundary.areas[p]);
+                            addPair(hotId, coldId, h);
+                        }
+                    } else if (boundary && boundary.type === "convection") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const id = boundary.ids[p];
+                            const h = boundary.coeffs[p] * boundary.areas[p];
+                            diag[id] += dt * h;
+                            rhs[id] += dt * h * boundary.fluidTempK;
+                        }
+                    }
+
+                    for (let iter = 0; iter < 30; iter++) {
+                        next.set(rhs);
+                        for (let p = 0; p < pairA.length; p++) {
+                            const i = pairA[p];
+                            const j = pairB[p];
+                            const c = pairC[p];
+                            next[i] += c * guess[j];
+                            next[j] += c * guess[i];
+                        }
+                        for (let i = 0; i < mesh.count; i++) {
+                            next[i] = mesh.material[i] === 0 ? 0 : clamp(next[i] / Math.max(diag[i], 1e-12), SPACE_TEMP_K, 4300);
+                        }
+                        guess.set(next);
+                    }
+
+                    for (let i = 0; i < mesh.count; i++) t[i] = guess[i];
+                    this.enforceIsothermalRegions();
+                    this.lastSpaceRadiationFlux = this.spaceRadiationFluxFor(t);
+                    return this.boundaryFluxFor(t);
+                }
+
+                stepOnce(dt) {
+                    const mesh = this.mesh;
+                    const t = mesh.temperature;
+                    const next = mesh.nextTemperature;
+                    this.delta.fill(0);
+                    for (let p = 0; p < this.pairsA.length; p++) {
+                        const i = this.pairsA[p];
+                        const j = this.pairsB[p];
+                        const q = this.pairG[p] * (t[j] - t[i]);
+                        this.delta[i] += q;
+                        this.delta[j] -= q;
+                    }
+                    const boundaryFlux = this.applyBoundaryFluxes();
+                    this.applySpaceRadiation();
+                    for (let i = 0; i < mesh.count; i++) {
+                        if (mesh.material[i] === 0) {
+                            next[i] = 0;
+                            continue;
+                        }
+                        next[i] = clamp(t[i] + dt * this.delta[i] / mesh.capacity[i], SPACE_TEMP_K, 4300);
+                    }
+                    mesh.temperature = next;
+                    mesh.nextTemperature = t;
+                    this.enforceIsothermalRegions();
+                    return boundaryFlux;
+                }
+
+                enforceIsothermalRegions() {
+                    const regions = this.scenario.isothermalRegions;
+                    if (!regions || !regions.length) return;
+                    const t = this.mesh.temperature;
+                    for (const regionId of regions) {
+                        let energy = 0;
+                        let capacity = 0;
+                        for (let i = 0; i < this.mesh.count; i++) {
+                            if (this.mesh.region[i] !== regionId) continue;
+                            const cap = this.mesh.capacity[i];
+                            energy += t[i] * cap;
+                            capacity += cap;
+                        }
+                        if (capacity <= 0) continue;
+                        const average = energy / capacity;
+                        for (let i = 0; i < this.mesh.count; i++) {
+                            if (this.mesh.region[i] === regionId) t[i] = average;
+                        }
+                    }
+                }
+
+                applySpaceRadiation() {
+                    const t = this.mesh.temperature;
+                    const space4 = SPACE_TEMP_K * SPACE_TEMP_K * SPACE_TEMP_K * SPACE_TEMP_K;
+                    let loss = 0;
+                    for (let p = 0; p < this.radIds.length; p++) {
+                        const id = this.radIds[p];
+                        const ti = t[id];
+                        const ti2 = ti * ti;
+                        const q = SIGMA * this.radAreaEps[p] * ((ti2 * ti2) - space4);
+                        this.delta[id] -= q;
+                        loss += q;
+                    }
+                    this.lastSpaceRadiationFlux = loss;
+                }
+
+                applyBoundaryFluxes() {
+                    const boundary = this.scenario.boundary;
+                    const t = this.mesh.temperature;
+                    let net = 0;
+                    if (!boundary) return 0;
+
+                    if (boundary.type === "radiation" && boundary.hotId >= 0 && boundary.coldId >= 0) {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const hotId = boundary.hotIds[p];
+                            const coldId = boundary.coldIds[p];
+                            const th = t[hotId];
+                            const tc = t[coldId];
+                            const th2 = th * th;
+                            const tc2 = tc * tc;
+                            const q = SIGMA * boundary.view * boundary.areas[p] * ((th2 * th2) - (tc2 * tc2));
+                            this.delta[hotId] -= q;
+                            this.delta[coldId] += q;
+                            net += q;
+                        }
+                    } else if (boundary.type === "convection") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const id = boundary.ids[p];
+                            const q = boundary.coeffs[p] * boundary.areas[p] * (boundary.fluidTempK - t[id]);
+                            this.delta[id] += q;
+                            net += q;
+                        }
+                    }
+                    return net;
+                }
+
+                boundaryFaceTemperatures(t) {
+                    const boundary = this.scenario.boundary;
+                    if (!boundary || boundary.type !== "radiation") return { hot: SPACE_TEMP_K, cold: SPACE_TEMP_K };
+                    let hot = 0;
+                    let cold = 0;
+                    let area = 0;
+                    for (let p = 0; p < boundary.count; p++) {
+                        const a = boundary.areas[p];
+                        hot += t[boundary.hotIds[p]] * a;
+                        cold += t[boundary.coldIds[p]] * a;
+                        area += a;
+                    }
+                    return area > 0 ? { hot: hot / area, cold: cold / area } : { hot: SPACE_TEMP_K, cold: SPACE_TEMP_K };
+                }
+
+                linearizedRadiationConductance(hot, cold, boundary, area = boundary.area) {
+                    const th = Math.max(hot, SPACE_TEMP_K);
+                    const tc = Math.max(cold, SPACE_TEMP_K);
+                    return SIGMA * boundary.view * area * (th + tc) * (th * th + tc * tc);
+                }
+
+                spaceRadiationFluxFor(t) {
+                    const space4 = SPACE_TEMP_K * SPACE_TEMP_K * SPACE_TEMP_K * SPACE_TEMP_K;
+                    let loss = 0;
+                    for (let p = 0; p < this.radIds.length; p++) {
+                        const id = this.radIds[p];
+                        const ti = t[id];
+                        const ti2 = ti * ti;
+                        loss += SIGMA * this.radAreaEps[p] * ((ti2 * ti2) - space4);
+                    }
+                    return loss;
+                }
+
+                boundaryFluxFor(t) {
+                    const boundary = this.scenario.boundary;
+                    if (!boundary) return 0;
+                    let net = 0;
+                    if (boundary.type === "radiation" && boundary.hotId >= 0 && boundary.coldId >= 0) {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const th = t[boundary.hotIds[p]];
+                            const tc = t[boundary.coldIds[p]];
+                            const th2 = th * th;
+                            const tc2 = tc * tc;
+                            net += SIGMA * boundary.view * boundary.areas[p] * ((th2 * th2) - (tc2 * tc2));
+                        }
+                    } else if (boundary.type === "convection") {
+                        for (let p = 0; p < boundary.count; p++) {
+                            const id = boundary.ids[p];
+                            net += boundary.coeffs[p] * boundary.areas[p] * (boundary.fluidTempK - t[id]);
+                        }
+                    }
+                    return net;
+                }
+
+                computeCrossFlux() {
+                    const mesh = this.mesh;
+                    const t = mesh.temperature;
+                    let total = 0;
+                    for (let p = 0; p < this.crossA.length; p++) {
+                        const i = this.crossA[p];
+                        const j = this.crossB[p];
+                        const q = this.crossG[p] * (t[i] - t[j]);
+                        if (mesh.region[i] === 1 && mesh.region[j] === 2) total += q;
+                        else if (mesh.region[i] === 2 && mesh.region[j] === 1) total -= q;
+                    }
+                    return total;
+                }
+            }
+
+            class ParticleSystem3D {
+                constructor(kind, count, sourceTempK, frontX) {
+                    this.kind = kind;
+                    this.count = count;
+                    this.sourceTempK = sourceTempK;
+                    this.frontX = frontX;
+                    this.x = new Float32Array(count);
+                    this.y = new Float32Array(count);
+                    this.z = new Float32Array(count);
+                    this.vx = new Float32Array(count);
+                    this.vy = new Float32Array(count);
+                    this.vz = new Float32Array(count);
+                    this.radius = new Float32Array(count);
+                    this.tempK = new Float32Array(count);
+                    this.age = new Float32Array(count);
+                    this.life = new Float32Array(count);
+                    this.cellNext = new Int32Array(count);
+                    this.gridNx = kind === "liquid" ? 76 : 46;
+                    this.gridNy = kind === "liquid" ? 28 : 16;
+                    this.gridNz = kind === "liquid" ? 10 : 8;
+                    this.gridCount = this.gridNx * this.gridNy * this.gridNz;
+                    this.cellHead = new Int32Array(this.gridCount);
+                    this.cellDensity = new Float32Array(this.gridCount);
+                    this.cellPressure = new Float32Array(this.gridCount);
+                    this.cellVx = new Float32Array(this.gridCount);
+                    this.cellVy = new Float32Array(this.gridCount);
+                    this.cellVz = new Float32Array(this.gridCount);
+                    this.cellTemp = new Float32Array(this.gridCount);
+                    this.bounds = {
+                        x0: -0.165,
+                        x1: Math.max(0.02, frontX - 0.002),
+                        y0: -DOMAIN.height * 0.50,
+                        y1: DOMAIN.height * 0.50,
+                        z0: -DOMAIN.depth * 0.50,
+                        z1: DOMAIN.depth * 0.50
+                    };
+                    this.resetAll();
+                }
+
+                resetAll() {
+                    for (let i = 0; i < this.count; i++) {
+                        this.resetParticle(i, lerp(this.bounds.x0, this.bounds.x1 - 0.015, hash01(i, 9)));
+                        this.age[i] = this.life[i] * hash01(i, 41);
+                    }
+                }
+
+                resetParticle(i, x) {
+                    const liquid = this.kind === "liquid";
+                    this.radius[i] = liquid ? 0.00034 + hash01(i, 17) * 0.00018 : 0.00043 + hash01(i, 17) * 0.00026;
+                    this.x[i] = clamp(x, this.bounds.x0 + this.radius[i], this.bounds.x1 - this.radius[i]);
+                    this.y[i] = lerp(this.bounds.y0 + this.radius[i], this.bounds.y1 - this.radius[i], hash01(i, 3));
+                    this.z[i] = lerp(this.bounds.z0 + this.radius[i], this.bounds.z1 - this.radius[i], hash01(i, 5));
+                    this.vx[i] = liquid ? 0.012 + hash01(i, 7) * 0.018 : 0.115 + hash01(i, 7) * 0.170;
+                    this.vy[i] = liquid ? (hash01(i, 11) - 0.56) * 0.014 : (hash01(i, 11) - 0.5) * 0.125;
+                    this.vz[i] = liquid ? (hash01(i, 13) - 0.5) * 0.010 : (hash01(i, 13) - 0.5) * 0.085;
+                    this.tempK[i] = this.sourceTempK - hash01(i, 23) * (liquid ? 130 : 180);
+                    this.age[i] = 0;
+                    this.life[i] = liquid ? 28.0 + hash01(i, 29) * 18.0 : 14.0 + hash01(i, 29) * 12.0;
+                }
+
+                update(frameDt, scenario, playing) {
+                    if (!playing) return;
+                    const dt = Math.min(frameDt, 0.035);
+                    const liquid = this.kind === "liquid";
+                    const frontCell = scenario.mesh.endCell(2, "left");
+                    const surfaceTempK = frontCell >= 0 ? scenario.mesh.temperature[frontCell] : scenario.minK;
+                    const block = scenario.blocks3d ? scenario.blocks3d.find((item) => item.region === 2) : null;
+                    if (block) this.bounds.x1 = Math.max(this.bounds.x0 + 0.04, block.x0 - 0.002);
+                    this.applyParticleInteractions(dt);
+                    for (let i = 0; i < this.count; i++) {
+                        this.age[i] += dt;
+                        if (this.age[i] > this.life[i]) {
+                            this.resetParticle(i, this.bounds.x0 + this.radius[i] + hash01(i + state.frameTime, 47) * 0.055);
+                            this.age[i] = this.life[i] * hash01(i + state.frameTime, 51) * 0.18;
+                        }
+                        const inlet = clamp(1 - (this.x[i] - this.bounds.x0) / (liquid ? 0.130 : 0.155), 0, 1);
+                        if (inlet > 0) {
+                            this.tempK[i] += (this.sourceTempK - this.tempK[i]) * clamp((liquid ? 1.00 : 1.70) * inlet * dt, 0, 0.16);
+                            this.vx[i] += (liquid ? 0.010 : 0.180) * inlet * dt;
+                        }
+                        if (liquid) {
+                            const thermalLift = clamp((this.tempK[i] - surfaceTempK) / 520, -0.60, 1.00);
+                            const nearFace = clamp(1 - Math.abs(this.bounds.x1 - this.x[i]) / 0.12, 0, 1);
+                            const xTone = clamp((this.x[i] - this.bounds.x0) / Math.max(this.bounds.x1 - this.bounds.x0, 1e-6), 0, 1);
+                            const yTone = this.y[i] / Math.max(DOMAIN.height * 0.5, 1e-6);
+                            const zTone = this.z[i] / Math.max(DOMAIN.depth * 0.5, 1e-6);
+                            const vortex = Math.sin(Math.PI * xTone) * (0.28 + 0.72 * nearFace);
+                            const rollPhase = state.frameTime * 1.25 + xTone * 9.2 + zTone * 1.6;
+                            const crossRoll = Math.sin(rollPhase) * 0.018 * vortex;
+                            const depthRoll = Math.cos(rollPhase + yTone * 2.8) * 0.016 * vortex;
+                            const recirc = 0.007 * Math.sin(Math.PI * xTone) * (0.22 - 0.72 * yTone);
+                            this.vx[i] += (0.012 + recirc + 0.002 * thermalLift - this.vx[i] * 0.180) * dt;
+                            this.vy[i] += (-0.030 + 0.007 * thermalLift - yTone * 0.010 + crossRoll) * dt;
+                            this.vz[i] += (depthRoll - this.z[i] * 0.38) * dt;
+                        } else {
+                            const thermalRise = clamp((this.tempK[i] - surfaceTempK) / 720, -0.3, 1.0);
+                            const xTone = clamp((this.x[i] - this.bounds.x0) / Math.max(this.bounds.x1 - this.bounds.x0, 1e-6), 0, 1);
+                            const bulk = 0.105 + 0.040 * Math.sin(state.frameTime * 1.8 + xTone * 5.8);
+                            this.vx[i] += (bulk - this.vx[i]) * 0.16 * dt + Math.sin(state.frameTime * 5.7 + i * 0.63) * 0.045 * dt;
+                            this.vy[i] += (0.045 * thermalRise - this.y[i] * 0.80 + Math.sin(state.frameTime * 4.1 + i) * 0.048) * dt;
+                            this.vz[i] += (-this.z[i] * 0.80 + Math.cos(state.frameTime * 4.7 + i) * 0.036) * dt;
+                        }
+
+                        const maxSpeed = liquid ? 0.070 : 0.62;
+                        const speed = Math.hypot(this.vx[i], this.vy[i], this.vz[i]);
+                        if (speed > maxSpeed) {
+                            const scale = maxSpeed / Math.max(speed, 1e-6);
+                            this.vx[i] *= scale;
+                            this.vy[i] *= scale;
+                            this.vz[i] *= scale;
+                        }
+
+                        this.x[i] += this.vx[i] * dt;
+                        this.y[i] += this.vy[i] * dt;
+                        this.z[i] += this.vz[i] * dt;
+
+                        this.exchangeParticleHeat(i, surfaceTempK, dt);
+                        this.collideBounds(i, surfaceTempK);
+                        if (block) this.collideBlock(i, block);
+                    }
+                }
+
+                exchangeParticleHeat(i, surfaceTempK, dt) {
+                    const frontProximity = clamp(1 - Math.abs(this.bounds.x1 - this.x[i]) / 0.055, 0, 1);
+                    const baseCooling = this.kind === "liquid" ? 0.74 : 0.24;
+                    const sourceMix = clamp((this.x[i] - this.bounds.x0) / Math.max(this.bounds.x1 - this.bounds.x0, 1e-6), 0, 1);
+                    const contactTarget = surfaceTempK + (this.sourceTempK - surfaceTempK) * (this.kind === "liquid" ? 0.32 : 0.44);
+                    const target = frontProximity > 0.02 ? contactTarget : this.sourceTempK;
+                    const rate = frontProximity > 0.02
+                        ? baseCooling * (0.25 + frontProximity)
+                        : (this.kind === "liquid" ? 0.20 : 0.28) * (1 - sourceMix);
+                    this.tempK[i] += (target - this.tempK[i]) * clamp(rate * dt, 0, 0.12);
+                }
+
+                gridIndexForPosition(x, y, z) {
+                    const b = this.bounds;
+                    const gx = clamp(Math.floor((x - b.x0) / Math.max(b.x1 - b.x0, 1e-6) * this.gridNx), 0, this.gridNx - 1);
+                    const gy = clamp(Math.floor((y - b.y0) / Math.max(b.y1 - b.y0, 1e-6) * this.gridNy), 0, this.gridNy - 1);
+                    const gz = clamp(Math.floor((z - b.z0) / Math.max(b.z1 - b.z0, 1e-6) * this.gridNz), 0, this.gridNz - 1);
+                    return gx + this.gridNx * (gy + this.gridNy * gz);
+                }
+
+                gridCellIndex(gx, gy, gz) {
+                    const x = clamp(gx, 0, this.gridNx - 1);
+                    const y = clamp(gy, 0, this.gridNy - 1);
+                    const z = clamp(gz, 0, this.gridNz - 1);
+                    return x + this.gridNx * (y + this.gridNy * z);
+                }
+
+                cellPressureAt(gx, gy, gz) {
+                    return this.cellPressure[this.gridCellIndex(gx, gy, gz)];
+                }
+
+                buildInteractionGrid() {
+                    this.cellHead.fill(-1);
+                    for (let i = 0; i < this.count; i++) {
+                        const cell = this.gridIndexForPosition(this.x[i], this.y[i], this.z[i]);
+                        this.cellNext[i] = this.cellHead[cell];
+                        this.cellHead[cell] = i;
+                    }
+                }
+
+                applyParticleInteractions(dt) {
+                    const liquid = this.kind === "liquid";
+                    if (liquid) {
+                        this.applyLiquidGridFluid(dt);
+                        return;
+                    }
+                    const interactionScale = liquid ? 7.20 : 3.40;
+                    const stiffness = liquid ? 0.070 : 0.090;
+                    const restitution = liquid ? 0.20 : 0.84;
+                    const viscosity = liquid ? 0.160 : 0.010;
+                    const cohesion = liquid ? 0.034 : 0.000;
+                    const searchRange = liquid ? 2 : 1;
+                    this.buildInteractionGrid();
+                    for (let i = 0; i < this.count; i++) {
+                        const b = this.bounds;
+                        const cx = clamp(Math.floor((this.x[i] - b.x0) / Math.max(b.x1 - b.x0, 1e-6) * this.gridNx), 0, this.gridNx - 1);
+                        const cy = clamp(Math.floor((this.y[i] - b.y0) / Math.max(b.y1 - b.y0, 1e-6) * this.gridNy), 0, this.gridNy - 1);
+                        const cz = clamp(Math.floor((this.z[i] - b.z0) / Math.max(b.z1 - b.z0, 1e-6) * this.gridNz), 0, this.gridNz - 1);
+                        for (let dzCell = -searchRange; dzCell <= searchRange; dzCell++) {
+                            const gz = cz + dzCell;
+                            if (gz < 0 || gz >= this.gridNz) continue;
+                            for (let dyCell = -searchRange; dyCell <= searchRange; dyCell++) {
+                                const gy = cy + dyCell;
+                                if (gy < 0 || gy >= this.gridNy) continue;
+                                for (let dxCell = -searchRange; dxCell <= searchRange; dxCell++) {
+                                    const gx = cx + dxCell;
+                                    if (gx < 0 || gx >= this.gridNx) continue;
+                                    let j = this.cellHead[gx + this.gridNx * (gy + this.gridNy * gz)];
+                                    while (j >= 0) {
+                                        if (j > i) this.interactPair(i, j, dt, liquid, interactionScale, stiffness, restitution, viscosity, cohesion);
+                                        j = this.cellNext[j];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                applyLiquidGridFluid(dt) {
+                    this.cellDensity.fill(0);
+                    this.cellPressure.fill(0);
+                    this.cellVx.fill(0);
+                    this.cellVy.fill(0);
+                    this.cellVz.fill(0);
+                    this.cellTemp.fill(0);
+
+                    for (let i = 0; i < this.count; i++) {
+                        const cell = this.gridIndexForPosition(this.x[i], this.y[i], this.z[i]);
+                        this.cellDensity[cell] += 1;
+                        this.cellVx[cell] += this.vx[i];
+                        this.cellVy[cell] += this.vy[i];
+                        this.cellVz[cell] += this.vz[i];
+                        this.cellTemp[cell] += this.tempK[i];
+                    }
+
+                    const activeVolume = this.gridNx * this.gridNy * this.gridNz;
+                    const targetDensity = Math.max(1.20, this.count / activeVolume * 1.10);
+                    for (let c = 0; c < this.gridCount; c++) {
+                        const density = this.cellDensity[c];
+                        if (density > 0) {
+                            const inv = 1 / density;
+                            this.cellVx[c] *= inv;
+                            this.cellVy[c] *= inv;
+                            this.cellVz[c] *= inv;
+                            this.cellTemp[c] *= inv;
+                        }
+                        this.cellPressure[c] = Math.max(0, (density - targetDensity) / targetDensity);
+                    }
+
+                    const b = this.bounds;
+                    const invX = this.gridNx / Math.max(b.x1 - b.x0, 1e-6);
+                    const invY = this.gridNy / Math.max(b.y1 - b.y0, 1e-6);
+                    const invZ = this.gridNz / Math.max(b.z1 - b.z0, 1e-6);
+                    for (let i = 0; i < this.count; i++) {
+                        const gx = clamp(Math.floor((this.x[i] - b.x0) * invX), 0, this.gridNx - 1);
+                        const gy = clamp(Math.floor((this.y[i] - b.y0) * invY), 0, this.gridNy - 1);
+                        const gz = clamp(Math.floor((this.z[i] - b.z0) * invZ), 0, this.gridNz - 1);
+                        const cell = this.gridCellIndex(gx, gy, gz);
+                        const gradX = this.cellPressureAt(gx + 1, gy, gz) - this.cellPressureAt(gx - 1, gy, gz);
+                        const gradY = this.cellPressureAt(gx, gy + 1, gz) - this.cellPressureAt(gx, gy - 1, gz);
+                        const gradZ = this.cellPressureAt(gx, gy, gz + 1) - this.cellPressureAt(gx, gy, gz - 1);
+                        this.vx[i] -= gradX * 0.020;
+                        this.vy[i] -= gradY * 0.017;
+                        this.vz[i] -= gradZ * 0.021;
+
+                        const sx = (gx + 0.5) / this.gridNx;
+                        const sy = (gy + 0.5) / this.gridNy - 0.5;
+                        const sz = (gz + 0.5) / this.gridNz - 0.5;
+                        const envelope = Math.sin(Math.PI * sx);
+                        const curlPhase = state.frameTime * 0.90 + sx * 7.4 + sz * 2.1;
+                        const swirlScale = envelope * clamp(0.35 + this.cellDensity[cell] / Math.max(targetDensity * 2.8, 1e-6), 0.35, 1.15);
+                        this.vx[i] += Math.sin(curlPhase + sy * 4.2) * 0.0018 * swirlScale;
+                        this.vy[i] += Math.sin(curlPhase) * 0.0048 * swirlScale;
+                        this.vz[i] += Math.cos(curlPhase + sy * 3.4) * 0.0056 * swirlScale;
+
+                        const density = this.cellDensity[cell];
+                        if (density > 0) {
+                            const blend = clamp(0.13 * dt * 60, 0, 0.16);
+                            this.vx[i] += (this.cellVx[cell] - this.vx[i]) * blend;
+                            this.vy[i] += (this.cellVy[cell] - this.vy[i]) * blend;
+                            this.vz[i] += (this.cellVz[cell] - this.vz[i]) * blend;
+                            this.tempK[i] += (this.cellTemp[cell] - this.tempK[i]) * clamp(0.11 * dt * 60, 0, 0.16);
+                        }
+                    }
+                }
+
+                interactPair(i, j, dt, liquid, interactionScale, stiffness, restitution, viscosity, cohesion) {
+                    const dx = this.x[j] - this.x[i];
+                    const dy = this.y[j] - this.y[i];
+                    const dz = this.z[j] - this.z[i];
+                    const minDist = this.radius[i] + this.radius[j];
+                    const influence = minDist * interactionScale;
+                    const dist2 = dx * dx + dy * dy + dz * dz;
+                    if (dist2 <= 1e-10 || dist2 > influence * influence) return;
+                    const dist = Math.sqrt(dist2);
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const nz = dz / dist;
+                    const rvx = this.vx[j] - this.vx[i];
+                    const rvy = this.vy[j] - this.vy[i];
+                    const rvz = this.vz[j] - this.vz[i];
+                    const normalSpeed = rvx * nx + rvy * ny + rvz * nz;
+                    const overlap = minDist - dist;
+                    if (overlap > 0) {
+                        const push = overlap / Math.max(minDist, 1e-6);
+                        const impulse = push * stiffness + Math.max(-normalSpeed, 0) * restitution * 0.42;
+                        this.vx[i] -= nx * impulse;
+                        this.vy[i] -= ny * impulse;
+                        this.vz[i] -= nz * impulse;
+                        this.vx[j] += nx * impulse;
+                        this.vy[j] += ny * impulse;
+                        this.vz[j] += nz * impulse;
+                    } else if (liquid) {
+                        const pull = (1 - (dist - minDist) / Math.max(influence - minDist, 1e-6)) * cohesion * dt;
+                        this.vx[i] += nx * pull;
+                        this.vy[i] += ny * pull;
+                        this.vz[i] += nz * pull;
+                        this.vx[j] -= nx * pull;
+                        this.vy[j] -= ny * pull;
+                        this.vz[j] -= nz * pull;
+                    }
+                    const mix = viscosity * dt;
+                    this.vx[i] += rvx * mix;
+                    this.vy[i] += rvy * mix;
+                    this.vz[i] += rvz * mix;
+                    this.vx[j] -= rvx * mix;
+                    this.vy[j] -= rvy * mix;
+                    this.vz[j] -= rvz * mix;
+                    const heatMix = (liquid ? 0.085 : 0.020) * dt;
+                    const dT = (this.tempK[j] - this.tempK[i]) * heatMix;
+                    this.tempK[i] += dT;
+                    this.tempK[j] -= dT;
+                }
+
+                collideBounds(i, surfaceTempK) {
+                    const b = this.bounds;
+                    const r = this.radius[i];
+                    if (this.x[i] < b.x0 + r) {
+                        this.x[i] = b.x0 + r;
+                        this.vx[i] = Math.abs(this.vx[i]) * (this.kind === "liquid" ? 0.64 : 0.96) + (this.kind === "liquid" ? 0.012 : 0.110);
+                        this.vy[i] += (hash01(i + state.frameTime, 43) - 0.5) * (this.kind === "liquid" ? 0.035 : 0.160);
+                        this.vz[i] += (hash01(i + state.frameTime, 53) - 0.5) * (this.kind === "liquid" ? 0.024 : 0.120);
+                        this.tempK[i] += (this.sourceTempK - this.tempK[i]) * (this.kind === "liquid" ? 0.42 : 0.55);
+                        this.age[i] = 0;
+                    } else if (this.x[i] > b.x1 - r) {
+                        this.x[i] = b.x1 - r;
+                        this.vx[i] = -Math.abs(this.vx[i]) * (this.kind === "liquid" ? 0.70 : 0.96);
+                        this.vy[i] += (hash01(i + state.frameTime, 61) - 0.5) * (this.kind === "liquid" ? 0.038 : 0.180);
+                        this.vz[i] += (hash01(i + state.frameTime, 67) - 0.5) * (this.kind === "liquid" ? 0.024 : 0.125);
+                        this.tempK[i] += (surfaceTempK - this.tempK[i]) * (this.kind === "liquid" ? 0.13 : 0.05);
+                    }
+                    if (this.y[i] < b.y0 + r) {
+                        this.y[i] = b.y0 + r;
+                        this.vy[i] = Math.abs(this.vy[i]) * (this.kind === "liquid" ? 0.36 : 0.92);
+                        if (this.kind === "liquid") this.vx[i] += 0.004;
+                    } else if (this.y[i] > b.y1 - r) {
+                        this.y[i] = b.y1 - r;
+                        this.vy[i] = -Math.abs(this.vy[i]) * (this.kind === "liquid" ? 0.48 : 0.92);
+                        if (this.kind === "liquid") this.vx[i] -= 0.003;
+                    }
+                    if (this.z[i] < b.z0 + r) {
+                        this.z[i] = b.z0 + r;
+                        this.vz[i] = Math.abs(this.vz[i]) * 0.82;
+                    } else if (this.z[i] > b.z1 - r) {
+                        this.z[i] = b.z1 - r;
+                        this.vz[i] = -Math.abs(this.vz[i]) * 0.82;
+                    }
+                }
+
+                collideBlock(i, block) {
+                    const r = this.radius[i];
+                    const insideX = this.x[i] > block.x0 - r && this.x[i] < block.x1 + r;
+                    const insideY = this.y[i] > block.y0 - r && this.y[i] < block.y1 + r;
+                    const insideZ = this.z[i] > block.z0 - r && this.z[i] < block.z1 + r;
+                    if (!insideX || !insideY || !insideZ) return;
+                    const pen = [
+                        { axis: "x0", value: Math.abs(this.x[i] - (block.x0 - r)) },
+                        { axis: "x1", value: Math.abs((block.x1 + r) - this.x[i]) },
+                        { axis: "y0", value: Math.abs(this.y[i] - (block.y0 - r)) },
+                        { axis: "y1", value: Math.abs((block.y1 + r) - this.y[i]) },
+                        { axis: "z0", value: Math.abs(this.z[i] - (block.z0 - r)) },
+                        { axis: "z1", value: Math.abs((block.z1 + r) - this.z[i]) }
+                    ].sort((a, b) => a.value - b.value)[0].axis;
+                    const bounce = this.kind === "liquid" ? 0.88 : 0.96;
+                    if (pen === "x0") {
+                        this.x[i] = block.x0 - r;
+                        this.vx[i] = -Math.abs(this.vx[i]) * bounce;
+                        this.vy[i] += (hash01(i + state.frameTime, 71) - 0.42) * (this.kind === "liquid" ? 0.050 : 0.22);
+                        this.vz[i] += (hash01(i + state.frameTime, 73) - 0.5) * (this.kind === "liquid" ? 0.032 : 0.15);
+                    } else if (pen === "x1") {
+                        this.x[i] = block.x1 + r;
+                        this.vx[i] = Math.abs(this.vx[i]) * bounce;
+                    } else if (pen === "y0") {
+                        this.y[i] = block.y0 - r;
+                        this.vy[i] = -Math.abs(this.vy[i]) * bounce;
+                    } else if (pen === "y1") {
+                        this.y[i] = block.y1 + r;
+                        this.vy[i] = Math.abs(this.vy[i]) * bounce;
+                    } else if (pen === "z0") {
+                        this.z[i] = block.z0 - r;
+                        this.vz[i] = -Math.abs(this.vz[i]) * bounce;
+                    } else {
+                        this.z[i] = block.z1 + r;
+                        this.vz[i] = Math.abs(this.vz[i]) * bounce;
+                    }
+                }
+            }
+
+            class ScenarioFactory {
+                static create(id, meshNx, hotC, coldC, couplingPct) {
+                    const base = SCENARIO_DEFAULTS[id];
+                    const shape = ScenarioFactory.meshShape(id);
+                    const mesh = new ThermalMesh(meshNx, DOMAIN.length, shape.height, shape.depth, shape.ny, shape.nz);
+                    const hotK = cToK(hotC);
+                    const coldK = cToK(coldC);
+                    const blocks3d = [];
+
+                    const addBlock = (options) => {
+                        mesh.fillBlock(options);
+                        blocks3d.push({
+                            region: options.region,
+                            name: options.name,
+                            x0: options.x0,
+                            x1: options.x1,
+                            y0: -(options.visualHeight || mesh.height) / 2,
+                            y1: (options.visualHeight || mesh.height) / 2,
+                            z0: -(options.visualDepth || mesh.depth) / 2,
+                            z1: (options.visualDepth || mesh.depth) / 2,
+                            tone: options.tone,
+                            visualHeight: options.visualHeight || mesh.height,
+                            visualDepth: options.visualDepth || mesh.depth
+                        });
+                    };
+
+                    if (id === "radiation") {
+                        addBlock({
+                            region: 1,
+                            material: "anodizedAluminum",
+                            name: "Extreme anodized aluminum",
+                            x0: 0.140,
+                            x1: 0.295,
+                            temperatureK: hotK,
+                            tone: "hot",
+                            visualHeight: 0.235,
+                            visualDepth: 0.215
+                        });
+                        addBlock({
+                            region: 2,
+                            material: "anodizedAluminum",
+                            name: "Cold anodized aluminum receiver",
+                            x0: 0.455,
+                            x1: 0.615,
+                            temperatureK: coldK,
+                            tone: "cold",
+                            visualHeight: 0.235,
+                            visualDepth: 0.215
+                        });
+                        mesh.finalize();
+                        return ScenarioFactory.finish(base, mesh, blocks3d, {
+                            boundary: BoundaryModels.radiation(mesh, 1, 2, couplingPct),
+                            minK: coldK,
+                            maxK: hotK,
+                            targetK: mesh.totalEnergy() / mesh.totalCapacity,
+                            conserved: true,
+                            glowGap: { x0: 0.295, x1: 0.455 },
+                            isothermalRegions: [1]
+                        });
+                    }
+
+                    if (id === "gas" || id === "liquid") {
+                        addBlock({
+                            region: 2,
+                            material: "aluminum",
+                            name: "Cold thin aluminum bar",
+                            x0: 0.285,
+                            x1: 1.005,
+                            temperatureK: coldK,
+                            tone: "cold"
+                        });
+                        mesh.finalize();
+                        const liquid = id === "liquid";
+                        const hBase = liquid ? 1350 : 155;
+                        return ScenarioFactory.finish(base, mesh, blocks3d, {
+                            boundary: BoundaryModels.convection(mesh, 2, hotK, hBase, couplingPct, liquid),
+                            minK: coldK,
+                            maxK: hotK,
+                            targetK: hotK,
+                            conserved: false,
+                            particleKind: id,
+                            particleCount: liquid ? 60000 : 12000
+                        });
+                    }
+
+                    addBlock({
+                        region: 1,
+                        material: "aluminum",
+                        name: "Hot aluminum bar",
+                        x0: 0.080,
+                        x1: 0.540,
+                        temperatureK: hotK,
+                        tone: "hot"
+                    });
+                    addBlock({
+                        region: 2,
+                        material: "aluminum",
+                        name: "Cold aluminum bar",
+                        x0: 0.540,
+                        x1: 1.000,
+                        temperatureK: coldK,
+                        tone: "cold"
+                    });
+                    mesh.finalize();
+                    return ScenarioFactory.finish(base, mesh, blocks3d, {
+                        boundary: null,
+                        minK: coldK,
+                        maxK: hotK,
+                        targetK: mesh.totalEnergy() / mesh.totalCapacity,
+                        conserved: true,
+                        contactX: 0.540
+                    });
+                }
+
+                static meshShape(id) {
+                    if (id === "radiation") {
+                        return { height: 0.235, depth: 0.215, ny: 14, nz: 12 };
+                    }
+                    return { height: DOMAIN.height, depth: DOMAIN.depth, ny: 8, nz: 5 };
+                }
+
+                static finish(base, mesh, blocks3d, options) {
+                    return {
+                        ...base,
+                        mesh,
+                        blocks3d,
+                        boundary: options.boundary,
+                        minK: Math.min(options.minK, options.maxK),
+                        maxK: Math.max(options.minK, options.maxK),
+                        initialHotK: mesh.averageForRegion(1) || options.maxK,
+                        initialColdK: mesh.averageForRegion(2),
+                        initialAverageK: mesh.totalCapacity > 0 ? mesh.totalEnergy() / mesh.totalCapacity : options.maxK,
+                        targetK: options.targetK,
+                        conserved: options.conserved,
+                        particleKind: options.particleKind || null,
+                        particleCount: options.particleCount || 0,
+                        glowGap: options.glowGap || null,
+                        contactX: options.contactX || null,
+                        isothermalRegions: options.isothermalRegions || []
+                    };
+                }
+            }
+
+            class ThermalRenderer3D {
+                constructor(canvas) {
+                    if (!window.THREE) throw new Error("Three.js did not load.");
+                    this.canvas = canvas;
+                    this.scene = new THREE.Scene();
+                    this.scene.fog = new THREE.FogExp2(0x171717, 0.035);
+                    this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
+                    this.camera.position.set(3.4, 2.25, 4.6);
+                    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+                    this.renderer.setClearColor(0x171717, 1);
+                    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                    this.renderer.outputEncoding = THREE.sRGBEncoding;
+                    this.renderer.toneMapping = THREE.NoToneMapping;
+                    this.renderer.toneMappingExposure = 1.0;
+                    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                    this.controls.enableDamping = true;
+                    this.controls.dampingFactor = 0.08;
+                    this.controls.minDistance = 2.4;
+                    this.controls.maxDistance = 12;
+                    this.controls.target.set(0.20, 0, 0);
+                    this.root = new THREE.Group();
+                    this.scene.add(this.root);
+                    this.solidMesh = null;
+                    this.blockGlowSprites = [];
+                    this.solidIds = [];
+                    this.solidSamples = [];
+                    this.radiationGlow = null;
+                    this.contactGlow = null;
+                    this.particleMesh = null;
+                    this.particleGlowMesh = null;
+                    this.dummy = new THREE.Object3D();
+                    this.tempColor = new THREE.Color();
+                    this.glowTexture = makeGlowTexture();
+                    this.sceneCenterX = DOMAIN.length / 2;
+                    this.initLights();
+                }
+
+                initLights() {
+                    this.scene.add(new THREE.AmbientLight(0x08101b, 0.42));
+                    const hemi = new THREE.HemisphereLight(0x6fa8d9, 0x020306, 0.62);
+                    this.scene.add(hemi);
+                    const key = new THREE.DirectionalLight(0xfff2d0, 2.2);
+                    key.position.set(-2.8, 4.4, 4.6);
+                    this.scene.add(key);
+                    const rim = new THREE.DirectionalLight(0x48cfff, 0.9);
+                    rim.position.set(3.8, 1.8, -4.0);
+                    this.scene.add(rim);
+                }
+
+                rebuild(scenario) {
+                    this.scene.remove(this.root);
+                    this.disposeObject(this.root);
+                    this.root = new THREE.Group();
+                    this.scene.add(this.root);
+                    this.solidIds = [];
+                    this.solidSamples = [];
+                    this.blockGlowSprites = [];
+                    this.radiationGlow = null;
+                    this.contactGlow = null;
+                    this.particleMesh = null;
+                    this.particleGlowMesh = null;
+                    const bounds = this.sceneBounds(scenario);
+                    this.sceneCenterX = (bounds.x0 + bounds.x1) / 2;
+                    this.controls.target.set(0, 0, 0);
+                    this.addGlassCase(scenario);
+                    this.addReferenceGrid();
+                    this.addScaleRuler(scenario);
+                    this.addSolids(scenario);
+                    this.addBlockGlowSprites(scenario);
+                    this.addBlockOutlines(scenario);
+                    this.addScenarioGlow(scenario);
+                    this.addParticles(scenario);
+                }
+
+                disposeObject(object) {
+                    if (!object) return;
+                    object.traverse((child) => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            const disposeMaterial = (mat) => {
+                                if (mat.map) mat.map.dispose();
+                                mat.dispose();
+                            };
+                            if (Array.isArray(child.material)) child.material.forEach(disposeMaterial);
+                            else disposeMaterial(child.material);
+                        }
+                    });
+                }
+
+                toSceneX(x) {
+                    return (x - this.sceneCenterX) * DOMAIN.scale;
+                }
+
+                toSceneVec(x, y, z) {
+                    return new THREE.Vector3(this.toSceneX(x), y * DOMAIN.scale, z * DOMAIN.scale);
+                }
+
+                addGlassCase(scenario) {
+                    let x0 = 0;
+                    let x1 = DOMAIN.length;
+                    let caseHeight = DOMAIN.height;
+                    let caseDepth = DOMAIN.depth;
+                    if (scenario && scenario.blocks3d && scenario.blocks3d.length) {
+                        x0 = Math.min(...scenario.blocks3d.map((block) => block.x0));
+                        x1 = Math.max(...scenario.blocks3d.map((block) => block.x1));
+                        caseHeight = Math.max(...scenario.blocks3d.map((block) => block.visualHeight || DOMAIN.height));
+                        caseDepth = Math.max(...scenario.blocks3d.map((block) => block.visualDepth || DOMAIN.depth));
+                        if (scenario.particleKind) x0 = Math.min(x0, -0.165);
+                    }
+                    const length = (x1 - x0) * DOMAIN.scale;
+                    const centerX = this.toSceneX((x0 + x1) / 2);
+                    const height = caseHeight * DOMAIN.scale * 1.035;
+                    const depth = caseDepth * DOMAIN.scale * 1.035;
+                    const mat = new THREE.MeshPhysicalMaterial({
+                        color: 0x9bdcff,
+                        transparent: true,
+                        opacity: 0.105,
+                        roughness: 0.08,
+                        metalness: 0,
+                        transmission: 0.35,
+                        depthWrite: false,
+                        side: THREE.DoubleSide
+                    });
+                    const edgeMat = new THREE.LineBasicMaterial({ color: 0x78bde8, transparent: true, opacity: 0.38 });
+                    const panels = [
+                        { size: [length, 0.025, depth], pos: [centerX, height / 2, 0] },
+                        { size: [length, 0.025, depth], pos: [centerX, -height / 2, 0] },
+                        { size: [length, height, 0.025], pos: [centerX, 0, -depth / 2] },
+                        { size: [length, height, 0.018], pos: [centerX, 0, depth / 2], opacity: 0.045 },
+                        { size: [0.025, height, depth], pos: [centerX - length / 2, 0, 0] },
+                        { size: [0.025, height, depth], pos: [centerX + length / 2, 0, 0] }
+                    ];
+                    for (const panel of panels) {
+                        const material = panel.opacity ? mat.clone() : mat;
+                        if (panel.opacity) material.opacity = panel.opacity;
+                        const mesh = new THREE.Mesh(new THREE.BoxGeometry(...panel.size), material);
+                        mesh.position.set(...panel.pos);
+                        this.root.add(mesh);
+                    }
+                    const box = new THREE.BoxGeometry(length, height, depth);
+                    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box), edgeMat);
+                    edges.position.x = centerX;
+                    this.root.add(edges);
+                }
+
+                addReferenceGrid() {
+                    const grid = new THREE.GridHelper(11, 22, 0x3b6684, 0x263a4b);
+                    grid.position.y = -DOMAIN.height * DOMAIN.scale * 0.5 - 0.018;
+                    grid.material.transparent = true;
+                    grid.material.opacity = 0.32;
+                    this.root.add(grid);
+                }
+
+                sceneBounds(scenario) {
+                    let x0 = 0;
+                    let x1 = DOMAIN.length;
+                    let height = DOMAIN.height;
+                    let depth = DOMAIN.depth;
+                    if (scenario && scenario.blocks3d && scenario.blocks3d.length) {
+                        x0 = Math.min(...scenario.blocks3d.map((block) => block.x0));
+                        x1 = Math.max(...scenario.blocks3d.map((block) => block.x1));
+                        height = Math.max(...scenario.blocks3d.map((block) => block.visualHeight || DOMAIN.height));
+                        depth = Math.max(...scenario.blocks3d.map((block) => block.visualDepth || DOMAIN.depth));
+                        if (scenario.particleKind) x0 = Math.min(x0, -0.165);
+                    }
+                    return { x0, x1, height, depth };
+                }
+
+                niceRulerLength(span) {
+                    const target = span * 0.28;
+                    const options = [0.05, 0.10, 0.20, 0.25, 0.50, 1.00];
+                    let best = options[0];
+                    for (const option of options) {
+                        if (option <= target) best = option;
+                    }
+                    return best;
+                }
+
+                formatRulerLength(meters) {
+                    if (meters < 0.1) return `${Math.round(meters * 1000)} mm`;
+                    if (meters < 1) return `${Math.round(meters * 100)} cm`;
+                    return `${meters.toFixed(1)} m`;
+                }
+
+                addScaleRuler(scenario) {
+                    const bounds = this.sceneBounds(scenario);
+                    const span = Math.max(bounds.x1 - bounds.x0, 0.05);
+                    const meters = this.niceRulerLength(span);
+                    const sceneCenter = this.toSceneX((bounds.x0 + bounds.x1) / 2);
+                    const xStart = sceneCenter - meters * DOMAIN.scale * 0.5;
+                    const xEnd = xStart + meters * DOMAIN.scale;
+                    const y = -bounds.height * DOMAIN.scale * 0.5 - 0.095;
+                    const z = bounds.depth * DOMAIN.scale * 0.5 + 0.115;
+                    const tick = 0.050;
+                    const points = [];
+                    const addSegment = (a, b) => {
+                        points.push(new THREE.Vector3(...a), new THREE.Vector3(...b));
+                    };
+                    addSegment([xStart, y, z], [xEnd, y, z]);
+                    const divisions = 5;
+                    for (let i = 0; i <= divisions; i++) {
+                        const x = lerp(xStart, xEnd, i / divisions);
+                        const tickHeight = i === 0 || i === divisions ? tick * 1.35 : tick;
+                        addSegment([x, y - tickHeight, z], [x, y + tickHeight, z]);
+                    }
+                    const geom = new THREE.BufferGeometry().setFromPoints(points);
+                    const mat = new THREE.LineBasicMaterial({ color: 0xd8e6f5, transparent: true, opacity: 0.86 });
+                    const ruler = new THREE.LineSegments(geom, mat);
+                    ruler.renderOrder = 6;
+                    this.root.add(ruler);
+
+                    const labelMat = new THREE.SpriteMaterial({
+                        map: makeLabelTexture(this.formatRulerLength(meters)),
+                        transparent: true,
+                        opacity: 0.92,
+                        depthWrite: false
+                    });
+                    const label = new THREE.Sprite(labelMat);
+                    label.position.set((xStart + xEnd) / 2, y + 0.125, z);
+                    label.scale.set(0.52, 0.13, 1);
+                    label.renderOrder = 7;
+                    this.root.add(label);
+                }
+
+                addSolids(scenario) {
+                    const mesh = scenario.mesh;
+                    this.solidSamples = [];
+                    for (let i = 0; i < mesh.count; i++) {
+                        if (mesh.material[i] === 0) continue;
+                        this.solidSamples.push({ id: i });
+                    }
+                    const geom = withWhiteVertexColors(new THREE.BoxGeometry(1, 1, 1));
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: 0xffffff,
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: 0.96
+                    });
+                    this.solidMesh = new THREE.InstancedMesh(geom, mat, this.solidSamples.length);
+                    this.solidMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                    for (let n = 0; n < this.solidSamples.length; n++) {
+                        const sample = this.solidSamples[n];
+                        const i = sample.id;
+                        this.dummy.position.set(
+                            this.toSceneX(mesh.centerX(i)),
+                            mesh.centerY(i) * DOMAIN.scale,
+                            mesh.centerZ(i) * DOMAIN.scale
+                        );
+                        this.dummy.scale.set(mesh.dx * DOMAIN.scale * 0.96, mesh.dy * DOMAIN.scale * 0.92, mesh.dz * DOMAIN.scale * 0.92);
+                        this.dummy.updateMatrix();
+                        this.solidMesh.setMatrixAt(n, this.dummy.matrix);
+                        this.solidMesh.setColorAt(n, visibleColorForTemperature(mesh.temperature[i], scenario.maxK));
+                    }
+                    this.solidMesh.instanceColor.needsUpdate = true;
+                    this.solidMesh.material.needsUpdate = true;
+                    this.root.add(this.solidMesh);
+                }
+
+                sampleSolidTemperature(mesh, sample) {
+                    return mesh.temperature[sample.id];
+                }
+
+                addBlockGlowSprites(scenario) {
+                    this.blockGlowSprites = [];
+                    for (const block of scenario.blocks3d) {
+                        const material = new THREE.SpriteMaterial({
+                            map: this.glowTexture,
+                            color: 0xffffff,
+                            transparent: true,
+                            opacity: 0,
+                            blending: THREE.AdditiveBlending,
+                            depthWrite: false,
+                            depthTest: false
+                        });
+                        const sprite = new THREE.Sprite(material);
+                        sprite.position.set(this.toSceneX((block.x0 + block.x1) / 2), 0, 0);
+                        sprite.renderOrder = 4;
+                        this.root.add(sprite);
+                        this.blockGlowSprites.push({ sprite, block, region: block.region });
+                    }
+                }
+
+                addBlockOutlines(scenario) {
+                    const mat = new THREE.LineBasicMaterial({ color: 0xd8e6f5, transparent: true, opacity: 0.45 });
+                    for (const block of scenario.blocks3d) {
+                        const xLen = (block.x1 - block.x0) * DOMAIN.scale;
+                        const geom = new THREE.BoxGeometry(
+                            xLen,
+                            (block.visualHeight || DOMAIN.height) * DOMAIN.scale * 1.025,
+                            (block.visualDepth || DOMAIN.depth) * DOMAIN.scale * 1.025
+                        );
+                        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), mat.clone());
+                        edges.position.set(this.toSceneX((block.x0 + block.x1) / 2), 0, 0);
+                        this.root.add(edges);
+                    }
+                }
+
+                addScenarioGlow(scenario) {
+                    const sceneHeight = scenario.blocks3d && scenario.blocks3d.length
+                        ? Math.max(...scenario.blocks3d.map((block) => block.visualHeight || DOMAIN.height))
+                        : DOMAIN.height;
+                    if (scenario.glowGap) {
+                        const length = (scenario.glowGap.x1 - scenario.glowGap.x0) * DOMAIN.scale;
+                        const mat = new THREE.SpriteMaterial({
+                            map: this.glowTexture,
+                            color: 0xffd66f,
+                            transparent: true,
+                            opacity: 0.08,
+                            blending: THREE.AdditiveBlending,
+                            depthWrite: false,
+                            depthTest: false
+                        });
+                        this.radiationGlow = new THREE.Sprite(mat);
+                        this.radiationGlow.position.set(this.toSceneX((scenario.glowGap.x0 + scenario.glowGap.x1) / 2), 0, 0);
+                        this.radiationGlow.scale.set(length * 1.28, sceneHeight * DOMAIN.scale * 2.25, 1);
+                        this.radiationGlow.userData = { length, height: sceneHeight * DOMAIN.scale * 2.25 };
+                        this.radiationGlow.renderOrder = 3;
+                        this.root.add(this.radiationGlow);
+                    }
+                    if (scenario.contactX) {
+                        const mat = new THREE.SpriteMaterial({
+                            map: this.glowTexture,
+                            color: 0xe9fbff,
+                            transparent: true,
+                            opacity: 0.22,
+                            blending: THREE.AdditiveBlending,
+                            depthWrite: false,
+                            depthTest: false
+                        });
+                        this.contactGlow = new THREE.Sprite(mat);
+                        this.contactGlow.position.set(this.toSceneX(scenario.contactX), 0, 0);
+                        this.contactGlow.scale.set(DOMAIN.height * DOMAIN.scale * 0.70, DOMAIN.height * DOMAIN.scale * 2.10, 1);
+                        this.contactGlow.userData = {
+                            width: DOMAIN.height * DOMAIN.scale * 0.70,
+                            height: DOMAIN.height * DOMAIN.scale * 2.10
+                        };
+                        this.contactGlow.renderOrder = 3;
+                        this.root.add(this.contactGlow);
+                    }
+                }
+
+                addParticles(scenario) {
+                    if (!scenario.particleKind) return;
+                    const liquid = scenario.particleKind === "liquid";
+                    const geom = withWhiteVertexColors(liquid ? new THREE.SphereGeometry(1, 6, 4) : new THREE.SphereGeometry(1, 5, 3));
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: 0xffffff,
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: liquid ? 0.96 : 0.78
+                    });
+                    this.particleMesh = new THREE.InstancedMesh(geom, mat, scenario.particleCount);
+                    this.particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                    for (let i = 0; i < scenario.particleCount; i++) {
+                        this.particleMesh.setColorAt(i, visibleColorForTemperature(scenario.boundary.fluidTempK, scenario.maxK));
+                    }
+                    this.particleMesh.instanceColor.needsUpdate = true;
+                    this.particleMesh.material.needsUpdate = true;
+                    this.root.add(this.particleMesh);
+
+                    const glowGeom = withWhiteVertexColors(new THREE.SphereGeometry(1, 5, 3));
+                    const glowMat = new THREE.MeshBasicMaterial({
+                        color: 0xffffff,
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: liquid ? 0.08 : 0.06,
+                        blending: THREE.AdditiveBlending,
+                        depthWrite: false
+                    });
+                    this.particleGlowMesh = new THREE.InstancedMesh(glowGeom, glowMat, scenario.particleCount);
+                    this.particleGlowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                    for (let i = 0; i < scenario.particleCount; i++) {
+                        this.particleGlowMesh.setColorAt(i, new THREE.Color(0x000000));
+                    }
+                    this.particleGlowMesh.instanceColor.needsUpdate = true;
+                    this.particleGlowMesh.material.needsUpdate = true;
+                    this.root.add(this.particleGlowMesh);
+                }
+
+                resize() {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const width = Math.max(1, Math.floor(rect.width));
+                    const height = Math.max(1, Math.floor(rect.height));
+                    this.renderer.setSize(width, height, false);
+                    this.camera.aspect = width / Math.max(height, 1);
+                    this.camera.updateProjectionMatrix();
+                }
+
+                render(scenario, solver, particles) {
+                    this.updateSolidColors(scenario);
+                    this.updateGlow(scenario, solver);
+                    this.updateParticles(scenario, particles);
+                    this.controls.update();
+                    this.renderer.render(this.scene, this.camera);
+                }
+
+                updateSolidColors(scenario) {
+                    if (!this.solidMesh) return;
+                    const mesh = scenario.mesh;
+                    for (let n = 0; n < this.solidSamples.length; n++) {
+                        const color = visibleColorForTemperature(mesh.temperature[this.solidSamples[n].id], scenario.maxK);
+                        this.solidMesh.setColorAt(n, color);
+                    }
+                    if (this.solidMesh.instanceColor) this.solidMesh.instanceColor.needsUpdate = true;
+                    for (const item of this.blockGlowSprites) {
+                        const temperature = mesh.averageForRegion(item.region);
+                        const strength = glowStrengthForTemperature(temperature);
+                        const glowColor = glowColorForTemperature(temperature, scenario.maxK);
+                        const width = (item.block.x1 - item.block.x0) * DOMAIN.scale * (1.06 + 0.34 * strength);
+                        const height = (item.block.visualHeight || DOMAIN.height) * DOMAIN.scale * (1.40 + 2.15 * strength);
+                        item.sprite.position.set(this.toSceneX((item.block.x0 + item.block.x1) / 2), 0, 0);
+                        item.sprite.scale.set(width, height, 1);
+                        item.sprite.material.color.copy(glowColor);
+                        item.sprite.material.opacity = clamp(strength * 0.14, 0, 0.16);
+                    }
+                }
+
+                updateGlow(scenario, solver) {
+                    const mesh = scenario.mesh;
+                    if (this.radiationGlow) {
+                        const normalizedFlux = clamp(Math.abs(solver.lastBoundaryFlux) / 9000, 0.03, 1);
+                        const sourceK = mesh.averageForRegion(1);
+                        const tempTone = clamp((sourceK - cToK(800)) / Math.max(cToK(2600) - cToK(800), 1), 0, 1);
+                        this.radiationGlow.material.opacity = 0.015 + 0.18 * Math.max(normalizedFlux, tempTone * 0.72);
+                        this.radiationGlow.scale.set(
+                            this.radiationGlow.userData.length * (1.16 + 0.20 * tempTone),
+                            this.radiationGlow.userData.height * (0.90 + 0.28 * tempTone),
+                            1
+                        );
+                    }
+                    if (this.contactGlow) {
+                        const contactTone = clamp(Math.abs(solver.lastCrossFlux) / 180000, 0, 1);
+                        this.contactGlow.material.opacity = 0.04 + 0.18 * contactTone;
+                        this.contactGlow.scale.set(
+                            this.contactGlow.userData.width * (0.90 + 0.65 * contactTone),
+                            this.contactGlow.userData.height * (0.85 + 0.45 * contactTone),
+                            1
+                        );
+                    }
+                }
+
+                updateParticles(scenario, particles) {
+                    if (!this.particleMesh || !particles) return;
+                    const liquid = scenario.particleKind === "liquid";
+                    for (let i = 0; i < particles.count; i++) {
+                        const radius = particles.radius[i] * DOMAIN.scale;
+                        const glowStrength = glowStrengthForTemperature(particles.tempK[i]);
+                        this.dummy.position.copy(this.toSceneVec(particles.x[i], particles.y[i], particles.z[i]));
+                        this.dummy.scale.set(radius, radius, radius);
+                        this.dummy.updateMatrix();
+                        this.particleMesh.setMatrixAt(i, this.dummy.matrix);
+                        const color = visibleColorForTemperature(particles.tempK[i], scenario.maxK);
+                        this.particleMesh.setColorAt(i, color);
+                        if (this.particleGlowMesh) {
+                            const glowRadius = radius * (0.6 + 2.4 * glowStrength);
+                            this.dummy.scale.set(glowRadius, glowRadius, glowRadius);
+                            this.dummy.updateMatrix();
+                            this.particleGlowMesh.setMatrixAt(i, this.dummy.matrix);
+                            const glowColor = glowColorForTemperature(particles.tempK[i], scenario.maxK);
+                            glowColor.multiplyScalar(clamp(glowStrength * 0.55, 0, 0.55));
+                            this.particleGlowMesh.setColorAt(i, glowColor);
+                        }
+                    }
+                    this.particleMesh.instanceMatrix.needsUpdate = true;
+                    if (this.particleMesh.instanceColor) this.particleMesh.instanceColor.needsUpdate = true;
+                    if (this.particleGlowMesh) {
+                        this.particleGlowMesh.instanceMatrix.needsUpdate = true;
+                        if (this.particleGlowMesh.instanceColor) this.particleGlowMesh.instanceColor.needsUpdate = true;
+                    }
+                }
+            }
+
+            function rebuildScenario(options = {}) {
+                const defaults = SCENARIO_DEFAULTS[state.scenarioId];
+                if (options.useScenarioDefaults) {
+                    state.hotC = defaults.defaultHotC;
+                    state.coldC = defaults.defaultColdC;
+                    state.couplingPct = defaults.defaultCoupling;
+                    state.speed = defaults.speed;
+                }
+                state.simTime = 0;
+                state.scenario = ScenarioFactory.create(
+                    state.scenarioId,
+                    state.meshNx,
+                    state.hotC,
+                    state.coldC,
+                    state.couplingPct
+                );
+                state.solver = new ThermalSolver(state.scenario);
+                if (state.scenario.particleKind) {
+                    const frontBlock = state.scenario.blocks3d.find((item) => item.region === 2);
+                    state.particleSystem = new ParticleSystem3D(
+                        state.scenario.particleKind,
+                        state.scenario.particleCount,
+                        state.scenario.boundary.fluidTempK,
+                        frontBlock ? frontBlock.x0 : DOMAIN.length
+                    );
+                } else {
+                    state.particleSystem = null;
+                }
+                state.renderer.rebuild(state.scenario);
+                state.renderer.updateSolidColors(state.scenario);
+                if (state.particleSystem) state.renderer.updateParticles(state.scenario, state.particleSystem);
+                updateControlValues();
+                updateScenarioText();
+                updateReadouts();
+            }
+
+            function updateControlValues() {
+                elements.speedSlider.value = speedToSlider(state.speed);
+                elements.speedInput.value = state.speed;
+                elements.meshSlider.value = state.meshNx;
+                elements.meshInput.value = state.meshNx;
+                elements.hotSlider.value = state.hotC;
+                elements.hotInput.value = state.hotC;
+                elements.coldSlider.value = state.coldC;
+                elements.coldInput.value = state.coldC;
+                elements.couplingSlider.value = state.couplingPct;
+                elements.couplingInput.value = state.couplingPct;
+                const defaults = SCENARIO_DEFAULTS[state.scenarioId];
+                elements.couplingLabel.textContent = defaults.couplingLabel;
+                elements.hotLabel.textContent = defaults.sourceLabel;
+                elements.summaryBoundary.textContent = defaults.boundaryLabel;
+                document.querySelectorAll("[data-scenario]").forEach((button) => {
+                    button.classList.toggle("active", button.dataset.scenario === state.scenarioId);
+                });
+            }
+
+            function updateScenarioText() {
+                const scenario = state.scenario;
+                elements.scenarioTitle.textContent = scenario.name;
+                elements.scenarioDetail.textContent = scenario.detail;
+                elements.summaryCells.textContent = `${scenario.mesh.nx} x ${scenario.mesh.ny} x ${scenario.mesh.nz} voxels`;
+                elements.stabilityPill.textContent = `stable step ${state.solver.maxDt.toFixed(3)} s`;
+            }
+
+            function equilibriumProgress() {
+                const scenario = state.scenario;
+                const solver = state.solver;
+                if (state.simTime < 0.05) return 0;
+                if (scenario.kind === "convection") {
+                    const input = Math.max(solver.lastBoundaryFlux, 0);
+                    const loss = Math.max(solver.lastSpaceRadiationFlux, 0);
+                    const denom = Math.max(input + loss, 1);
+                    return clamp(1 - Math.abs(input - loss) / denom, 0, 1);
+                }
+                const avg = scenario.mesh.totalCapacity > 0
+                    ? scenario.mesh.totalEnergy() / scenario.mesh.totalCapacity
+                    : SPACE_TEMP_K;
+                const initial = Math.max(scenario.initialAverageK - SPACE_TEMP_K, 1e-6);
+                return clamp(1 - (avg - SPACE_TEMP_K) / initial, 0, 1);
+            }
+
+            function updateReadouts() {
+                const scenario = state.scenario;
+                const solver = state.solver;
+                const mesh = scenario.mesh;
+                const hot = scenario.kind === "convection"
+                    ? scenario.boundary.fluidTempK
+                    : mesh.averageForRegion(1);
+                const cold = mesh.averageForRegion(2);
+                const exchangeFlow = scenario.kind === "conduction" ? solver.lastCrossFlux : solver.lastBoundaryFlux;
+                const flow = scenario.kind === "convection"
+                    ? exchangeFlow - solver.lastSpaceRadiationFlux
+                    : -solver.lastSpaceRadiationFlux;
+                const progress = equilibriumProgress();
+                elements.metricTime.textContent = formatTime(state.simTime);
+                elements.metricHot.textContent = formatTemp(hot);
+                elements.metricCold.textContent = formatTemp(cold);
+                elements.metricFlow.textContent = formatWatts(flow);
+                elements.metricEquilibrium.textContent = `${(progress * 100).toFixed(1)}%`;
+                elements.playState.textContent = progress > 0.995 ? "Equilibrium" : state.playing ? "Running" : "Paused";
+                elements.playBtn.classList.toggle("active", state.playing);
+                elements.pauseBtn.classList.toggle("active", !state.playing);
+                elements.legendHot.textContent = formatKelvin(scenario.maxK);
+                elements.legendMid.textContent = formatKelvin(scenario.maxK * 0.5);
+                elements.legendCold.textContent = "0 K";
+            }
+
+            function bindControls() {
+                document.querySelectorAll("[data-scenario]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        state.scenarioId = button.dataset.scenario;
+                        state.playing = true;
+                        rebuildScenario({ useScenarioDefaults: true });
+                    });
+                });
+                elements.playBtn.addEventListener("click", () => {
+                    state.playing = true;
+                    updateReadouts();
+                });
+                elements.pauseBtn.addEventListener("click", () => {
+                    state.playing = false;
+                    updateReadouts();
+                });
+                elements.resetBtn.addEventListener("click", () => rebuildScenario());
+                elements.speedSlider.addEventListener("input", () => {
+                    state.speed = sliderToSpeed(elements.speedSlider.value);
+                    updateControlValues();
+                });
+                elements.speedInput.addEventListener("change", () => {
+                    const value = Number(elements.speedInput.value);
+                    if (!Number.isFinite(value)) return;
+                    state.speed = Math.max(1, Math.round(value));
+                    updateControlValues();
+                });
+                bindNumberPair(elements.meshSlider, elements.meshInput, (value) => {
+                    state.meshNx = clamp(Math.round(value / 4) * 4, 80, 420);
+                    rebuildScenario();
+                }, true);
+                bindNumberPair(elements.hotSlider, elements.hotInput, (value) => {
+                    state.hotC = clamp(Math.round(value / 10) * 10, 120, 3600);
+                    rebuildScenario();
+                }, true);
+                bindNumberPair(elements.coldSlider, elements.coldInput, (value) => {
+                    state.coldC = clamp(Math.round(value), -40, 120);
+                    rebuildScenario();
+                }, true);
+                bindNumberPair(elements.couplingSlider, elements.couplingInput, (value) => {
+                    state.couplingPct = clamp(Math.round(value), 25, 220);
+                    rebuildScenario();
+                }, true);
+            }
+
+            function bindNumberPair(slider, input, onValue, rebuildOnInput = false) {
+                let queued = false;
+                const apply = (raw) => {
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    if (rebuildOnInput) {
+                        if (queued) return;
+                        queued = true;
+                        requestAnimationFrame(() => {
+                            queued = false;
+                            onValue(value);
+                        });
+                    } else {
+                        onValue(value);
+                    }
+                };
+                slider.addEventListener("input", () => apply(slider.value));
+                input.addEventListener("change", () => apply(input.value));
+            }
+
+            function resize() {
+                const railHeight = Math.ceil(elements.controlRail.getBoundingClientRect().height);
+                document.documentElement.style.setProperty("--rail-height", `${railHeight}px`);
+                if (state.renderer) state.renderer.resize();
+            }
+
+            let lastFrame = performance.now();
+            function animate(now) {
+                try {
+                    requestAnimationFrame(animate);
+                    const frameDt = Math.min((now - lastFrame) / 1000, 0.08);
+                    lastFrame = now;
+                    state.frameTime += frameDt;
+                    if (state.particleSystem) state.particleSystem.update(frameDt, state.scenario, state.playing);
+                    if (state.playing) {
+                        const simDt = frameDt * state.speed;
+                        state.simTime += state.solver.step(simDt);
+                    }
+                    updateReadouts();
+                    state.renderer.render(state.scenario, state.solver, state.particleSystem);
+                } catch (error) {
+                    showError(error);
+                }
+            }
+
+            function showError(error) {
+                elements.errorLog.style.display = "block";
+                elements.errorLog.textContent = error && error.stack ? error.stack : String(error);
+            }
+
+            function boot() {
+                try {
+                    state.renderer = new ThermalRenderer3D(elements.canvas);
+                    window.addEventListener("resize", resize);
+                    bindControls();
+                    rebuildScenario({ useScenarioDefaults: true });
+                    resize();
+                    requestAnimationFrame(animate);
+                } catch (error) {
+                    showError(error);
+                }
+            }
+
+            boot();
+        })();
+    </script>
+</body>
+
+</html>
